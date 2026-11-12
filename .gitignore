@@ -1,0 +1,7 @@
+key/
+.env
+*.key
+__pycache__/
+.pytest_cache/
+MGDebugger/src/output_data/
+.export/

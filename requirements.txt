@@ -1,0 +1,6 @@
+# Client side only. The model runs elsewhere (vLLM server, Ollama, or an API).
+openai>=1.40
+loguru
+tqdm
+numpy
+pytest

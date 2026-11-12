@@ -3,7 +3,7 @@ from loguru import logger
 import json
 import traceback
 from tqdm import tqdm
-from utils import evaluate_simple, parse_transcoder_problem_content
+from utils import evaluate_simple, evaluate_given_tests, parse_transcoder_problem_content
 from testcase_utils import get_parameter_names, parse_tests
 from mg_debugger import mg_debug
 from config import MAX_OUTER_RETRY, CONTINUOUS_RETRY
@@ -36,7 +36,11 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
         unsolved_seeds = unsolved_seeds[:max_examples]
         logger.info(f"Filtering to {max_examples} examples")
 
+    from llm_client import budget_left, BudgetExceeded
     for problem in tqdm(unsolved_seeds, ncols=100):
+        if not budget_left():  # [hdmg] stop cleanly; unstarted problems stay unattempted
+            logger.warning(f"Budget reached (${config.SPENT_USD:.2f}); stopping before {problem['task_id']}")
+            break
         
         model_to_be_fixed = input_seeds.split("/")[-2]
         from config import MODEL
@@ -69,31 +73,66 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
 
             problem['fixed_codes'] = []  # Initialize list to store fixed codes for each retry
             problem['mg_debug_retries'] = 0  # Initialize retry counter
+            # [hdmg] per-attempt record: did it pass the given (public) tests, the hidden tests,
+            # and how many tokens did the attempt use
+            problem['attempts'] = []
+            config.CURRENT_TASK_ID = problem['task_id']
+            first_public = first_hidden = None
 
-            for outer_retry in range(MAX_OUTER_RETRY):
+            for outer_retry in range(config.MAX_OUTER_RETRY):
+                config.CURRENT_ATTEMPT = outer_retry + 1
+                tok0 = config.TOTAL_PROMPT_TOKENS + config.TOTAL_COMPLETION_TOKENS
                 fixed_code = mg_debug(buggy_code, gold_tests)
                 problem['fixed_codes'].append(fixed_code)
                 problem['mg_debug_retries'] += 1
 
-                all_passed = evaluate_simple(fixed_code, entry_point, problem["test"])
-                if all_passed:
-                    fixed_problems += 1
-                    problem['debugged'] = True
-                    logger.info(f"Successfully fixed problem: {problem['task_id']} on retry {outer_retry + 1}")
+                hidden_pass = evaluate_simple(fixed_code, entry_point, problem["test"])
+                public_pass = evaluate_given_tests(fixed_code, "\n".join(problem["given_tests"]))
+                problem['attempts'].append({
+                    "attempt": outer_retry + 1,
+                    "public_pass": public_pass,
+                    "hidden_pass": hidden_pass,
+                    "tokens": config.TOTAL_PROMPT_TOKENS + config.TOTAL_COMPLETION_TOKENS - tok0,
+                })
+                if public_pass and first_public is None:
+                    first_public = outer_retry + 1
+                if hidden_pass and first_hidden is None:
+                    first_hidden = outer_retry + 1
+
+                if config.STOP_ON == "hidden":
+                    stop = first_hidden is not None
+                elif config.STOP_ON == "public":
+                    stop = first_public is not None
+                else:  # "both"
+                    stop = first_hidden is not None and first_public is not None
+                if stop:
                     break
-                else:
-                    logger.info(f"Failed to fix problem: {problem['task_id']} on retry {outer_retry + 1}")
-                    if outer_retry < MAX_OUTER_RETRY - 1:
-                        if CONTINUOUS_RETRY:
-                            buggy_code = fixed_code  # Use the last fixed code as the new buggy code for the next retry
-                        else:
-                            # Use the original buggy code for the next retry
-                            buggy_code = problem["solution"]
+                if CONTINUOUS_RETRY:
+                    buggy_code = fixed_code  # upstream option, off by default
 
-            if not all_passed:
+            # [hdmg] the two ways of scoring the same run
+            # paper / oracle selection: any attempt passed the hidden tests
+            problem['fixed_hidden_selection'] = first_hidden is not None
+            # deployable: take the first attempt that passed the public tests, then grade it on hidden tests
+            problem['fixed_public_selection'] = (
+                first_public is not None and problem['attempts'][first_public - 1]['hidden_pass'])
+            problem['first_public_attempt'] = first_public
+            problem['first_hidden_attempt'] = first_hidden
+            all_passed = problem['fixed_hidden_selection'] if config.STOP_ON != "public" else problem['fixed_public_selection']
+            if all_passed:
+                fixed_problems += 1
+                problem['debugged'] = True
+                logger.info(f"Successfully fixed problem: {problem['task_id']}")
+            else:
+                logger.info(f"Failed to fix problem: {problem['task_id']}")
                 problem['debugged'] = False
-                logger.info(f"Failed to fix problem: {problem['task_id']} after {MAX_OUTER_RETRY} retries")
 
+        except BudgetExceeded:
+            # [hdmg] ran out mid-problem: not a failure of the method, exclude it from scoring
+            logger.warning(f"Budget reached during {problem['task_id']}; excluded from results")
+            problem['budget_stopped'] = True
+            problem.pop('attempts', None)
+            break
         except Exception as e:
             logger.error(f"Error occurred while processing problem: {problem['task_id']}")
             logger.error(traceback.format_exc())
@@ -130,7 +169,7 @@ def _log_final_statistics(seeds, unsolved_seeds, total_unsolved, fixed_problems,
     logger.info(f"Average generate_test_cases calls per mg_debug call: {avg_generate_test_cases_calls:.2f}")
 
     # distribution of debug retries that solved the problem
-    debug_retries = [problem['mg_debug_retries'] for problem in unsolved_seeds if problem['debugged']]
+    debug_retries = [problem['mg_debug_retries'] for problem in unsolved_seeds if problem.get('debugged')]  # [hdmg] .get: budget stop leaves some unstarted
     debug_retries_counter = Counter(debug_retries)
 
     logger.info(f"=== Final Results ===")
@@ -161,6 +200,7 @@ def _log_final_statistics(seeds, unsolved_seeds, total_unsolved, fixed_problems,
             "total_debug_function_calls": config.TOTAL_DEBUG_FUNCTION_CALLS,
             "total_generate_test_cases_calls": config.TOTAL_GENERATE_TEST_CASES_CALLS,
             "total_convert_hierarchical_calls": config.TOTAL_CONVERT_HIERARCHICAL_CALLS,
+            "spent_usd": config.SPENT_USD,
             "avg_prompt_tokens_per_mg_debug": avg_prompt_tokens,
             "avg_completion_tokens_per_mg_debug": avg_completion_tokens,
             "avg_debug_function_calls_per_mg_debug": avg_debug_function_calls,

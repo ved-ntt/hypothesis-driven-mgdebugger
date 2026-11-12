@@ -4,6 +4,7 @@ MGDebugger - A hierarchical debugging tool for Python code
 Main entry point for the debugging pipeline
 """
 
+import argparse
 import time
 import json
 import os
@@ -11,6 +12,7 @@ import sys
 from loguru import logger
 
 from debug_pipeline import debug_dataset
+import config
 from config import (
     MAX_DEBUG_RETRIES, MAX_PARSE_RETRIES, RETRY_DELAY,
     REPEAT_CONVERT_HIERARCHICAL_NUM, REPEAT_TEST_CASE_GENERATION_NUM,
@@ -46,7 +48,13 @@ def setup_logging_and_output(input_seeds: str):
             "CONTINUOUS_RETRY": CONTINUOUS_RETRY,
             "TEMPERATURE": TEMPERATURE,
             "MAX_VLLM_RETRIES": MAX_VLLM_RETRIES,
-            "MINP": MINP
+            "MINP": MINP,
+            # [hdmg] settings that change results
+            "USE_MIN_P": config.USE_MIN_P,
+            "STOP_ON": config.STOP_ON,
+            "MAX_OUTER_RETRY_EFFECTIVE": config.MAX_OUTER_RETRY,
+            "TEMPERATURE_EFFECTIVE": config.TEMPERATURE,
+            "LLM_BASE_URL": config.LLM_BASE_URL,
         }
         f.write(json.dumps(info, indent=2))
 
@@ -55,17 +63,23 @@ def setup_logging_and_output(input_seeds: str):
 
 def main():
     """Main function to run the debugging pipeline"""
-    input_seeds = "input_data/humaneval/seed/deepseekcoder/seed.jsonl"
-    
+    # [hdmg] command-line options instead of editing the file
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seeds", default="input_data/humaneval/seed/deepseekcoder/seed.jsonl")
+    ap.add_argument("--max-examples", type=int, default=None)
+    args = ap.parse_args()
+    input_seeds = args.seeds
+
     # Setup logging and output directory
     output_folder = setup_logging_and_output(input_seeds)
+    config.CALL_LOG = f"{output_folder}/llm_calls.jsonl"
     
     logger.info("Starting MGDebugger pipeline")
     logger.info(f"Input seeds: {input_seeds}")
     logger.info(f"Output folder: {output_folder}")
     
     # Run the debugging pipeline
-    debug_dataset(input_seeds, max_examples=None, output_folder=output_folder)
+    debug_dataset(input_seeds, max_examples=args.max_examples, output_folder=output_folder)
     
     logger.info("MGDebugger pipeline completed")
 

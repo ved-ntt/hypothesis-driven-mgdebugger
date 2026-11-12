@@ -1,7 +1,10 @@
 import json
 import os
 from threading import Thread
-import resource
+try:
+    import resource  # [hdmg] not available on native Windows; only used by set_memory_limit
+except ImportError:
+    resource = None
 import signal
 import json
 import os

@@ -8,6 +8,18 @@ from test_generation import generate_test_cases
 from function_debugger import debug_function
 from config import MAX_DEBUG_RETRIES, MAX_PARSE_RETRIES
 import config
+import os  # [hdmg]
+import sys  # [hdmg]
+from llm_client import get_completion_with_retry  # [hdmg]
+
+
+def _hypothesis_debugger():
+    """[hdmg] Variant C's debug step, from hdmg/mg_adapter.py at the repo root."""
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if root not in sys.path:
+        sys.path.append(root)
+    from hdmg.mg_adapter import debug_function_hypothesis
+    return debug_function_hypothesis
 
 
 def mg_debug(full_code, gold_test_cases, max_debug_attempts=MAX_DEBUG_RETRIES):
@@ -59,7 +71,18 @@ def mg_debug(full_code, gold_test_cases, max_debug_attempts=MAX_DEBUG_RETRIES):
                 break
 
             logger.info(f"Debugging function: {func_name} (Attempt {debug_attempt + 1}/{max_debug_attempts})")
-            analysis, new_fixed_code = debug_function(fixed_code, func_name, test_cases)
+            if config.VARIANT == "C":
+                # [hdmg] variant C: hypothesis loop instead of the LLM-simulated trace. It needs the
+                # whole program to run the target, and returns the same (analysis, fix) pair.
+                analysis, new_fixed_code = _hypothesis_debugger()(
+                    fixed_code, func_name, test_cases, hierarchical_code,
+                    complete=get_completion_with_retry, k=config.HYPOTHESIS_K, timeout=config.SANDBOX_TIMEOUT,
+                    log_path=config.HYPOTHESIS_LOG,
+                    log_context={"task_id": config.CURRENT_TASK_ID, "attempt": config.CURRENT_ATTEMPT,
+                                 "debug_attempt": debug_attempt + 1})
+                logger.info(f"Hypothesis loop at {func_name}:\n{analysis}")
+            else:
+                analysis, new_fixed_code = debug_function(fixed_code, func_name, test_cases)
 
             if new_fixed_code:
                 logger.info(f"New fixed code for {func_name}:\n{new_fixed_code}")

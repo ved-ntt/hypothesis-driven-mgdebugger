@@ -5,9 +5,10 @@
 
 Decompose: echoes the code back (one function). Derive tests: returns the gold tests.
 Debug: noop returns the function unchanged; oracle returns the canonical solution.
+Variant C: hypotheses predict a value the first argument keeps (usually confirmed); fixes as above.
 It only checks plumbing (calls, logging, scoring); its results mean nothing.
 """
-import argparse, json, re
+import argparse, ast, json, re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 ap = argparse.ArgumentParser()
@@ -45,7 +46,30 @@ def answer(prompt):
         if args.mode == "oracle" and name in CANON:
             code = CANON[name]
         return "Trace: ...\n```python\n" + code + "\n```"
+    if "## Failing test" in prompt or prompt.startswith("Your reply was invalid"):
+        return "```json\n" + json.dumps(mock_hypothesis(prompt)) + "\n```"
+    if "## Confirmed hypothesis" in prompt:
+        # Variant C fix prompt: noop returns the target unchanged (the fix fails), oracle the canonical one
+        name = re.search(r"Rewrite ONLY (\w+)", prompt).group(1)
+        code = CANON.get(name) if args.mode == "oracle" else None
+        return "```python\n" + (code or between(prompt, "## Program", "## Confirmed hypothesis")) + "\n```"
     return "```python\npass\n```"
+
+
+def mock_hypothesis(prompt):
+    """Variant C hypothesis prompt. Predicts that the first keyword argument of the failing call keeps
+    its input value, which a real run confirms unless the target reassigns it, so a mock run goes
+    through trace, verdict and the fix step. Falls back to a prediction that is always rejected."""
+    hyp = {"hypothesis": "mock", "observe": ["__return__"], "expect": {"__return__": []}, "why": "mock"}
+    try:
+        call = ast.parse(between(prompt, "## Failing test", " expected "), mode="eval").body
+        kw = call.keywords[0]
+        value = ast.literal_eval(kw.value)
+        json.dumps(value)
+        hyp.update(observe=[kw.arg], expect={kw.arg: [value]})
+    except (SyntaxError, ValueError, TypeError, AttributeError, IndexError):
+        pass
+    return hyp
 
 
 class Handler(BaseHTTPRequestHandler):

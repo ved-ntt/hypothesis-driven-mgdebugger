@@ -10,7 +10,9 @@ MGDebugger/          YerbaPage/MGDebugger @ 3e9dc4f (MIT) with small patches, al
                      the second commit in this repo's history is exactly our diff against upstream
 hdmg/tracer.py       records chosen variables of one function while it runs (sys.settrace)
 hdmg/sandbox.py      runs code in a child process with timeout + memory cap; run_call, run_traced
-tests/               pytest for tracer and sandbox (incl. the palindrome example from the deck)
+hdmg/hypothesis_loop.py  variant C at one node: hypothesis -> real run -> harness verdict -> fix
+hdmg/mg_adapter.py   plugs the loop into MGDebugger's recursion (debug_function_hypothesis)
+tests/               pytest for tracer, sandbox, the loop, the adapter, and mg_debug end to end
 scripts/
   run_variant_a.sh   run variant A (MGDebugger as published) + summary   [Linux / WSL]
   run_variant_a.ps1  same for Windows PowerShell
@@ -58,6 +60,28 @@ backend omits temperature (samples at 1.0, vs the paper's 0.8). `key/` is gitign
 Only the vLLM + DeepSeek-Coder-V2-Lite run is directly comparable to the paper's Table 1
 (the seeds in the repo come from that model). Ollama serves a 4-bit quantization of the same
 model, so expect some gap. An API model gives a valid A-vs-C comparison but not a paper match.
+
+## Running variant C (hypothesis loop)
+
+Same pipeline, same scripts; only the debug step at a failing function changes.
+
+```
+HDMG_VARIANT=C bash scripts/run_variant_a.sh mock humaneval 3      # wiring check, no model needed
+HDMG_VARIANT=C bash scripts/run_variant_a.sh claude humanevalfix 5
+```
+
+MGDebugger still decomposes, derives tests and finds the failing function bottom-up. At that function
+`mg_debugger.py` calls `hdmg.mg_adapter.debug_function_hypothesis` instead of `debug_function`: the LLM
+proposes a hypothesis and predicts variable values, the sandbox runs the code and records them, and only a
+confirmed hypothesis may drive a fix, which must pass the node's tests. If no fix comes out of the loop, the
+function is left as it is (pure C: MGDebugger's simulated-trace `debug_function` is never called, so every C fix
+comes from a confirmed hypothesis). Settings: `HDMG_K` (3 hypotheses per debug attempt), `HDMG_SANDBOX_TIMEOUT`
+(5 s). A C run also writes `hypothesis_nodes.jsonl` (one line per debug call, with every round), and its LLM
+calls appear in `llm_calls.jsonl` as stages `hypothesis` and `fix`.
+
+The project compares A and C only, on the same pipeline, seeds and budget.
+
+`pytest tests` runs the MGDebugger end-to-end tests only when its requirements (loguru, openai) are installed.
 
 ## Status
 

@@ -7,6 +7,7 @@
 #
 # Seeds are the paper's DeepSeek-Coder-V2-Lite seeds (HumanEval/MBPP), so a run with that
 # model is directly comparable to Table 1. Override anything with HDMG_* env vars.
+# Variant C (hypothesis loop) with the same pipeline:  HDMG_VARIANT=C scripts/run_variant_a.sh ...
 set -euo pipefail
 BACKEND=${1:?backend}; DATASET=${2:?dataset}; MAX=${3:-}
 HERE="$(cd "$(dirname "$0")/.." && pwd)"

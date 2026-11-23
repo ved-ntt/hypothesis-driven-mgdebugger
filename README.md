@@ -122,4 +122,7 @@ The project compares A and C only, on the same pipeline, seeds and budget.
 - Week 1 (reproduction, findings): `results/week1_notes.md`
 - Data cleaning: `results/data_cleaning.md`
 - Hypothesis loop, MGDebugger integration, live demo: done (variant C)
-- Harness fixes, parallel runner, A vs C comparison: done; results go in `results/ab_*.md`
+- Harness fixes, parallel runner, A vs C comparison: done
+- **A vs C on HumanEvalFix (Claude Haiku 5.5, 151 bugs): no measurable difference.** 143 vs 144 repaired
+  of the 148 both runs completed (McNemar p = 1.0), C at about 4% higher cost; a third of repairs come
+  from the decomposition rewrite alone. See `results/experiment_findings.md` and `results/ab_humanevalfix.md`.

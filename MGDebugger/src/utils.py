@@ -215,16 +215,27 @@ def evaluate(code, entry_point, testcase, return_trace=False):
         # Convert both expected and actual output to the same type for comparison
         expected_output = repr(testcase["expected_output"])
 
-        # Update actual_output before assertion
-        testcase['actual_output'] = ast.literal_eval(output)
+        import config  # [hdmg]
+        if config.HARNESS == "fixed":
+            # [hdmg] compare values, not repr strings: (1, 2) vs [1, 2], 0.30000000000000004 vs 0.3,
+            # and round(f(x), n) == y public tests (testcase["round"] = n)
+            from hdmg.compare import from_repr, values_equal
+            actual = from_repr(output)
+            testcase['actual_output'] = actual
+            assert values_equal(actual, testcase["expected_output"], testcase.get("round")), \
+                f"Expected {expected_output}, but got {output}"
+        else:
+            # Update actual_output before assertion
+            testcase['actual_output'] = ast.literal_eval(output)
 
-        assert output == expected_output, f"Expected {expected_output}, but got {output}"
+            assert output == expected_output, f"Expected {expected_output}, but got {output}"
         logger.info(f'Test case passed: {testcase}')
         logger.info(f'Expected: {expected_output}, Got: {output}')
         return True, testcase
-    except TimeoutError:
+    except TimeoutError as e:  # [hdmg] "as e": upstream logs an undefined e here and crashes
         logger.error(f'Test case failed: {testcase}')
         logger.error(f"Timeout Error: {str(e)}")
+        testcase['actual_output'] = "timeout"  # [hdmg]
     except AssertionError as e:
         logger.error(f'Test case failed: {testcase}')
         logger.error(str(e))

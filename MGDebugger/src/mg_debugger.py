@@ -8,6 +8,7 @@ from test_generation import generate_test_cases
 from function_debugger import debug_function
 from config import MAX_DEBUG_RETRIES, MAX_PARSE_RETRIES
 import config
+import copy  # [hdmg]
 import os  # [hdmg]
 import sys  # [hdmg]
 from llm_client import get_completion_with_retry  # [hdmg]
@@ -54,7 +55,14 @@ def mg_debug(full_code, gold_test_cases, max_debug_attempts=MAX_DEBUG_RETRIES):
         logger.info(f"Processing function: {func_name}")
 
         func_code = functions[func_name]
-        test_cases = generate_test_cases(hierarchical_code, gold_test_cases, func_name)
+        if (config.HARNESS == "fixed" and func_name == config.CURRENT_ENTRY_POINT
+                and gold_test_cases):
+            # [hdmg] the top-level function already has the true tests: re-deriving them can only lose
+            # information (HumanEval/54: the derived test flipped True to False and hid the bug)
+            test_cases = copy.deepcopy(gold_test_cases)
+            logger.info(f"Using the {len(test_cases)} gold tests for top-level function {func_name}")
+        else:
+            test_cases = generate_test_cases(hierarchical_code, gold_test_cases, func_name)
         fixed_code = func_code
 
         for debug_attempt in range(max_debug_attempts):

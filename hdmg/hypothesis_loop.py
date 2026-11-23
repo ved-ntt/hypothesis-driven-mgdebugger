@@ -18,9 +18,11 @@ from typing import Any, Optional, Protocol
 try:
     from .sandbox import run_call, run_traced, call_expr_from_input
     from .tracer import RETURN, EXCEPTION
+    from .compare import from_repr, sequences_equal, values_equal
 except ImportError:
     from sandbox import run_call, run_traced, call_expr_from_input
     from tracer import RETURN, EXCEPTION
+    from compare import from_repr, sequences_equal, values_equal
 
 
 # Defaults (overridable by argument)
@@ -71,7 +73,10 @@ def run_test(program: str, target: str, test: dict, timeout: float = DEFAULT_TIM
     res = run_call(program, call_expr_from_input(target, test["input"]), timeout=timeout)
     status = res.get("status")
     if status == "ok":
-        return res.get("result") == test["expected_output"], res.get("result_repr") or repr(res.get("result"))
+        # compared by value (hdmg/compare.py): (1, 2) matches [1, 2], floats within tolerance,
+        # round(f(x), n) == y tests carry "round": n
+        shown = res.get("result_repr") or repr(res.get("result"))
+        return values_equal(from_repr(shown), test["expected_output"], test.get("round")), shown
     if status == "timeout":
         return False, f"timeout after {timeout:g} s"
     if status == "exception":
@@ -82,8 +87,10 @@ def run_test(program: str, target: str, test: dict, timeout: float = DEFAULT_TIM
 # For each variable name, it pulls the list of real values that variable took during a traced run.
 
 def extract_observed_values(run_result: dict, name: str) -> list:
+    # from the repr, not the JSON value: that recovers tuples, sets and None exactly; a repr the tracer
+    # cut short stays text, so it can only match the identical text
     trace = run_result.get("trace") or {}
-    return [e["value"] for e in trace.get("events", []) if e["call"] == 0 and e["var"] == name]
+    return [from_repr(e["repr"]) for e in trace.get("events", []) if e["call"] == 0 and e["var"] == name]
 
 
 # Compares LLM predictions against what actually happened.
@@ -101,7 +108,7 @@ def judge(hyp: dict, run_result: dict) -> tuple[str, str]:
     for name in hyp["observe"]:
         observed = extract_observed_values(run_result, name)
         predicted = hyp["expect"][name]
-        if observed != predicted:
+        if not sequences_equal(observed, predicted):  # normalised: tuples, sets, floats, True != 1
             ok = False
         reasons.append(f"{name}: predicted {predicted!r}, observed {observed!r}")
     return ("confirmed" if ok else "rejected"), "; ".join(reasons)

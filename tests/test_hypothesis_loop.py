@@ -157,3 +157,30 @@ def test_observable_names():
             "__return__", "__exception__"} <= names
     assert "k" not in names and "q" not in names         # other frames: the tracer can't see them
     assert hl.observable_names(code, "missing") is None
+
+
+# ---- value comparison in the verdict and in the node's tests (hdmg/compare.py) ----------------------
+UNIQ = "def uniq(xs):\n    seen = set(xs)\n    return sorted(seen, reverse=True)\n"
+UNIQ_TESTS = [{"input": {"xs": [3, 1, 3]}, "expected_output": [1, 3]}]
+UNIQ_FIX = "```python\ndef uniq(xs):\n    seen = set(xs)\n    return sorted(seen)\n```"
+
+
+def test_a_set_prediction_is_confirmed():
+    # the tracer sees {1, 3}; the LLM writes it as the JSON list [1, 3]
+    hyp = {"hypothesis": "sorted in reverse", "observe": ["seen"], "expect": {"seen": [[1, 3]]}, "why": "."}
+    result = debug_node(UNIQ, "uniq", UNIQ_TESTS, ScriptedLLM([J(hyp), UNIQ_FIX]))
+    assert result.status == "fixed" and result.rounds[0].verdict == "confirmed"
+
+
+def test_true_does_not_confirm_a_prediction_of_1():
+    prog = "def flag(x):\n    ok = x > 0\n    return 1 if ok else 0\n"
+    hyp = {"hypothesis": "h", "observe": ["ok"], "expect": {"ok": [1]}, "why": "."}
+    llm = ScriptedLLM([J(hyp), J(dict(hyp, hypothesis="h2")), J(dict(hyp, hypothesis="h3"))])
+    result = debug_node(prog, "flag", [{"input": {"x": 1}, "expected_output": 2}], llm)
+    assert [r.verdict for r in result.rounds] == ["rejected"] * 3
+
+
+def test_tuple_result_passes_a_list_expectation():
+    prog = "def pair():\n    return (2.0, 2.2)\n"
+    result = debug_node(prog, "pair", [{"input": {}, "expected_output": [2.0, 2.2]}], ScriptedLLM([]))
+    assert result.status == "already_passing"

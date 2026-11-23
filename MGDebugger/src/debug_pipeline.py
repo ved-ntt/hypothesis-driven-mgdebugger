@@ -20,10 +20,20 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
 
     unsolved_seeds = []
     # filter those problems that are not solved
+    skipped_undetectable = 0
     for i in range(len(seeds)):
         problem = json.loads(seeds[i])
         if not problem["is_solved"]:
+            if config.ONLY_DETECTABLE and problem.get("detectable") is False:  # [hdmg] cleaned seeds only
+                skipped_undetectable += 1
+                continue
             unsolved_seeds.append(problem)
+    if skipped_undetectable:
+        logger.info(f"Skipped {skipped_undetectable} undetectable problems (buggy code passes every given test)")
+    if config.SHARD:  # [hdmg] main.py --shard i/N: every N-th problem, starting at i
+        index, count = config.SHARD
+        unsolved_seeds = unsolved_seeds[index::count]
+        logger.info(f"Shard {index}/{count}: {len(unsolved_seeds)} problems")
 
     # parse transcoder problems
     if "transcoder" in input_seeds.lower():
@@ -67,8 +77,14 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
                 logger.info(f"Extracted {len(problem['given_tests'])} given tests, only using the first 3 samples")
                 problem["given_tests"] = problem["given_tests"][:3]
 
-            gold_tests_raw = "\n".join(problem["given_tests"]).replace(entry_point, "candidate")
-            gold_tests = parse_tests(gold_tests_raw, parameter_names, entry_point)["test_cases"]
+            if config.HARNESS == "fixed" and "public_tests" in problem:
+                # [hdmg] cleaned seeds: every given test, including round(...) and "is None" forms
+                gold_tests = [{k: t[k] for k in ("input", "expected_output", "round") if k in t}
+                              for t in problem["public_tests"]]
+            else:
+                gold_tests_raw = "\n".join(problem["given_tests"]).replace(entry_point, "candidate")
+                gold_tests = parse_tests(gold_tests_raw, parameter_names, entry_point)["test_cases"]
+            config.CURRENT_ENTRY_POINT = entry_point  # [hdmg]
             logger.info(f"Extracted gold test cases: {gold_tests}")
 
             problem['fixed_codes'] = []  # Initialize list to store fixed codes for each retry
@@ -175,7 +191,7 @@ def _log_final_statistics(seeds, unsolved_seeds, total_unsolved, fixed_problems,
     logger.info(f"=== Final Results ===")
     logger.info(f"Total unsolved problems in seeds: {total_unsolved}")
     logger.info(f"Problems fixed by our method: {fixed_problems}")
-    logger.info(f"Success rate: {fixed_problems / total_unsolved * 100:.2f}%")
+    logger.info(f"Success rate: {fixed_problems / max(total_unsolved, 1) * 100:.2f}%")  # [hdmg] max(): an empty shard has 0 problems
     logger.info(f"Debug retries distribution for solved problems: {debug_retries_counter}")
 
     logger.info(f"Total solved problems before: {len(seeds) - total_unsolved}")
@@ -211,7 +227,7 @@ def _log_final_statistics(seeds, unsolved_seeds, total_unsolved, fixed_problems,
         scores = {
             "total_unsolved": total_unsolved,
             "fixed_problems": fixed_problems,
-            "success_rate": fixed_problems / total_unsolved * 100,
+            "success_rate": fixed_problems / max(total_unsolved, 1) * 100,
             "debug_retries_distribution": debug_retries_counter,
             "total_solved_problems_before": len(seeds) - total_unsolved,
             "total_solved_problems_after": len(seeds) - total_unsolved + fixed_problems,

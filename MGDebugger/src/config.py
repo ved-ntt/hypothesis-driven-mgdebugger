@@ -56,6 +56,30 @@ HYPOTHESIS_K = int(os.environ.get("HDMG_K", "3"))
 SANDBOX_TIMEOUT = float(os.environ.get("HDMG_SANDBOX_TIMEOUT", "5"))
 # [hdmg] Variant C per-node JSONL log; set by main.py to <output_folder>/hypothesis_nodes.jsonl
 HYPOTHESIS_LOG = None
+# [hdmg] Test harness. "fixed" (default) for every variant: compare test results by value (tuple vs
+# list, float tolerance) instead of repr strings; take the gold tests from the cleaned seeds'
+# public_tests (scripts/clean_data.py), which reads the round(...) and "is None" asserts upstream
+# drops; test the top-level function on those gold tests instead of LLM-re-derived ones.
+# "published" keeps MGDebugger's method exactly. (In both modes a test that times out is logged
+# as a failure; upstream crashed there with a NameError.)
+HARNESS = os.environ.get("HDMG_HARNESS", "fixed").strip().lower()
+if HARNESS not in ("fixed", "published"):
+    raise ValueError(f"HDMG_HARNESS must be fixed or published, got {HARNESS!r}")
+# [hdmg] Skip problems whose buggy code passes every given test ("detectable": false in the cleaned
+# seeds): no debugger that sees only the given tests can find those bugs.
+ONLY_DETECTABLE = os.environ.get("HDMG_ONLY_DETECTABLE", "1") == "1"
+# [hdmg] Retry backoff for failed LLM calls (rate limits when shards run in parallel), seconds
+RETRY_BACKOFF = float(os.environ.get("HDMG_RETRY_BACKOFF", "2"))
+# [hdmg] Run one shard of the problems: (index, count), set by main.py --shard i/N
+SHARD = None
+# [hdmg] Entry point of the problem being debugged; mg_debug tests it on the gold tests
+CURRENT_ENTRY_POINT = None
+
+# [hdmg] The repo root, so MGDebugger can import hdmg (shared comparison, hypothesis loop)
+import sys as _sys
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _ROOT not in _sys.path:
+    _sys.path.append(_ROOT)
 
 # Global statistics tracking
 TOTAL_PROMPT_TOKENS = 0

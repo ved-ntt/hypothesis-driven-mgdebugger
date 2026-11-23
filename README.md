@@ -12,14 +12,23 @@ hdmg/tracer.py       records chosen variables of one function while it runs (sys
 hdmg/sandbox.py      runs code in a child process with timeout + memory cap; run_call, run_traced
 hdmg/hypothesis_loop.py  variant C at one node: hypothesis -> real run -> harness verdict -> fix
 hdmg/mg_adapter.py   plugs the loop into MGDebugger's recursion (debug_function_hypothesis)
-tests/               pytest for tracer, sandbox, the loop, the adapter, and mg_debug end to end
+hdmg/compare.py      value comparison shared by MGDebugger's fixed harness and the loop's verdict
+hdmg/public_tests.py parses given tests (incl. round(...), "is None", helper calls in arguments)
+data/clean/          cleaned seeds: structured public tests, detectable flag (scripts/clean_data.py)
+tests/               pytest for tracer, sandbox, the loop, the adapter, the harness, mg_debug end to end
 scripts/
-  run_variant_a.sh   run variant A (MGDebugger as published) + summary   [Linux / WSL]
+  run_experiment.sh  one variant on a cleaned dataset, parallel shards, merged + summarized
+  compare_runs.py    A vs C on the same problems: repairs, paired McNemar test, cost, bug types, loop stats
+  clean_data.py      builds data/clean/ and results/data_cleaning.md
+  run_variant_a.sh   one run on the original seeds + summary                  [Linux / WSL]
   run_variant_a.ps1  same for Windows PowerShell
+  backend_env.sh     model backends (claude, mistral, vllm, ollama, openai, mock)
+  merge_runs.py      merges shard folders (used by run_experiment.sh)
   summarize.py       accuracy, RSR (two scoring rules), tokens and calls per stage
   seed_audit.py      how many "buggy" seeds already pass all public tests
   mock_llm_server.py fake OpenAI-compatible server for wiring tests (no model)
-results/             audit output, run summaries, notes
+live_demo.py         class demo: the loop at one function, then inside MGDebugger's tree
+results/             data cleaning report, notes, A vs C comparisons
 ```
 
 ## Setup
@@ -28,9 +37,34 @@ Python 3.10+. Tested on Linux; use WSL on Windows. The PowerShell script and nat
 
 ```
 pip install -r requirements.txt
-python -m pytest -q tests            # 15 tests, ~3 s
-bash scripts/run_variant_a.sh mock humaneval 3    # wiring check, no model needed
+python -m pytest -q tests            # 63 tests, ~10 s
+bash scripts/run_experiment.sh mock humanevalfix C 2 2   # wiring check, no model needed
 ```
+
+## The A vs C experiment
+
+```
+python3 scripts/check_key.py                                   # key in key/apikey.txt
+HDMG_RUN_BUDGET_USD=1 bash scripts/run_experiment.sh claude humanevalfix A 4 3   # pilot: 12 problems
+HDMG_RUN_BUDGET_USD=1 bash scripts/run_experiment.sh claude humanevalfix C 4 3
+python3 scripts/compare_runs.py MGDebugger/src/output_data/experiments/humanevalfix_A_<ts> \
+                                MGDebugger/src/output_data/experiments/humanevalfix_C_<ts> \
+                                --out results/ab_humanevalfix_pilot.md
+```
+
+Drop the last argument (problems per shard) for the full run. A and C can run at the same time in two
+terminals. Both use the same pipeline, seeds, model and harness; only the debug step at a failing
+function differs. Defaults: fixed harness, undetectable bugs skipped, 2 outer attempts, $5 per run
+(`HDMG_RUN_BUDGET_USD`, split across shards), retries back off exponentially on API errors.
+
+**Data cleaning** (`results/data_cleaning.md`): every given test is parsed, including the forms MGDebugger
+drops or crashes on (HumanEval/12, /32, /38, /90 in HumanEvalFix), and bugs the given tests cannot detect
+are flagged: 13 of 164 in HumanEvalFix, 6 of 38 in HumanEval (DeepSeek seeds).
+
+**Harness** (`HDMG_HARNESS`, default `fixed`; `published` keeps MGDebugger's method):
+test results are compared by value ((1, 2) equals [1, 2], float tolerance, `round(f(x), n)` tests),
+gold tests come from the cleaned seeds, and the top-level function is tested on the gold tests instead of
+LLM-re-derived ones (the HumanEval/54 failure).
 
 ## Running variant A (the Week 1 reproduction)
 
@@ -85,4 +119,7 @@ The project compares A and C only, on the same pipeline, seeds and budget.
 
 ## Status
 
-Week 1: see `results/week1_notes.md`.
+- Week 1 (reproduction, findings): `results/week1_notes.md`
+- Data cleaning: `results/data_cleaning.md`
+- Hypothesis loop, MGDebugger integration, live demo: done (variant C)
+- Harness fixes, parallel runner, A vs C comparison: done; results go in `results/ab_*.md`

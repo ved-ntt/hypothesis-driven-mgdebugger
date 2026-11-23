@@ -26,7 +26,8 @@ PAPER = {
 def main(run_dir):
     params = json.load(open(os.path.join(run_dir, "params.json")))
     seeds_path = params["input_seeds"]
-    for base in [os.path.join(run_dir, *[".."] * k) for k in range(3, 8)]:
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "MGDebugger", "src")
+    for base in [src] + [os.path.join(run_dir, *[".."] * k) for k in range(2, 8)]:
         if os.path.exists(os.path.join(base, seeds_path)):
             seeds_path = os.path.join(base, seeds_path)
             break
@@ -34,6 +35,11 @@ def main(run_dir):
     n_total = len(seeds)
     n_solved_before = sum(s["is_solved"] for s in seeds)
     n_buggy = n_total - n_solved_before
+    # [cleaned seeds] undetectable bugs are skipped by the run, so they are not part of its RSR
+    if params.get("ONLY_DETECTABLE") and any("detectable" in s for s in seeds):
+        n_undetectable = sum(1 for s in seeds if not s["is_solved"] and s.get("detectable") is False)
+        n_buggy -= n_undetectable
+        print(f"(cleaned seeds: {n_undetectable} undetectable bugs excluded)")
 
     res_files = [f for f in glob.glob(os.path.join(run_dir, "*_debugging_seeds_from_*.jsonl"))]
     problems = [json.loads(l) for l in open(res_files[0])]
@@ -62,8 +68,11 @@ def main(run_dir):
     tok_p = sum(tokens_until(p, "first_public_attempt") for p in attempted)
 
     parts = seeds_path.replace("\\", "/").split("/")
-    dataset = next((d for d in ["humanevalfix", "humaneval", "mbpp"] if d in parts), "?")
+    # cleaned seeds are data/clean/<dataset>[_<model>].jsonl
+    dataset = next((d for d in ["humanevalfix", "humaneval", "mbpp"] if any(p.startswith(d) for p in parts)), "?")
     seed_model = parts[-2]
+    if parts[-2] == "clean":
+        seed_model = next((m for m in ["deepseekcoder", "codeqwen", "codestral"] if m in parts[-1]), "?")
     if dataset == "humanevalfix":  # buggy code is human-written; key the paper row by the debugging model
         m = params["MODEL"].lower()
         seed_model = next((k for k, pat in [("deepseekcoder", "deepseek"), ("codeqwen", "codeqwen"),

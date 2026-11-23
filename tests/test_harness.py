@@ -94,3 +94,14 @@ def test_detectable_filter_and_shards(tmp_path, monkeypatch, shard, expected):
     assert [p["task_id"] for p in done] == expected
     assert all(p["fixed_public_selection"] for p in done)
     assert seen[0] == [{"input": {"x": 1}, "expected_output": 1}]   # gold tests from public_tests
+
+
+@pytest.mark.parametrize("harness", ["fixed", "published"])
+def test_a_set_result_can_still_be_written_into_the_debug_prompt(monkeypatch, harness):
+    # HumanEval/16, /34, /58 crashed in A: debug_function json.dumps the test cases, actual_output included
+    monkeypatch.setattr(config, "HARNESS", harness)
+    code = "def uniq(xs):\n    return set(xs)\n"
+    passed, case = utils.evaluate(code, "uniq", {"input": {"xs": [3, 1, 3]}, "expected_output": [9]})
+    assert not passed
+    json.dumps(case)
+    assert case["actual_output"] == [1, 3]

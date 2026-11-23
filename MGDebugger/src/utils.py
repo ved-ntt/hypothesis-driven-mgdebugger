@@ -216,17 +216,34 @@ def evaluate(code, entry_point, testcase, return_trace=False):
         expected_output = repr(testcase["expected_output"])
 
         import config  # [hdmg]
+        import json as _json  # [hdmg]
+        from hdmg.compare import normalize as _normalize  # [hdmg]
+
+        def _json_safe(value):
+            # [hdmg] the test case (with actual_output) goes into debug_function's prompt through
+            # json.dumps, which crashes on a set (HumanEval/16, /34, /58 lost in A this way)
+            try:
+                _json.dumps(value)
+                return value
+            except (TypeError, ValueError):
+                try:
+                    value = _normalize(value)
+                    _json.dumps(value)
+                    return value
+                except (TypeError, ValueError):
+                    return repr(value)
+
         if config.HARNESS == "fixed":
             # [hdmg] compare values, not repr strings: (1, 2) vs [1, 2], 0.30000000000000004 vs 0.3,
             # and round(f(x), n) == y public tests (testcase["round"] = n)
             from hdmg.compare import from_repr, values_equal
             actual = from_repr(output)
-            testcase['actual_output'] = actual
+            testcase['actual_output'] = _json_safe(actual)
             assert values_equal(actual, testcase["expected_output"], testcase.get("round")), \
                 f"Expected {expected_output}, but got {output}"
         else:
             # Update actual_output before assertion
-            testcase['actual_output'] = ast.literal_eval(output)
+            testcase['actual_output'] = _json_safe(ast.literal_eval(output))  # [hdmg] _json_safe: crash fix
 
             assert output == expected_output, f"Expected {expected_output}, but got {output}"
         logger.info(f'Test case passed: {testcase}')

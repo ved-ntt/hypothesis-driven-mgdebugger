@@ -64,6 +64,56 @@ def per_problem_cost(run: dict, task_ids) -> dict:
     return {"cost": cost, "tokens": tokens, "calls": calls}
 
 
+def debug_invocations(run: dict) -> collections.Counter:
+    """(task_id, attempt) -> times the debug step ran: A's debug_function calls, C's loop calls."""
+    if run["params"].get("VARIANT", "A") == "C":
+        return collections.Counter((nd.get("task_id"), nd.get("attempt")) for nd in run["nodes"])
+    return collections.Counter((c["task_id"], c["attempt"]) for c in run["calls"]
+                               if c.get("ok") and c.get("stage") == "debug")
+
+
+def debug_step_section(A: dict, C: dict, shared: list, key: str) -> list:
+    """Separate repairs the debug step produced from repairs the decomposition rewrite produced.
+
+    MGDebugger's first step rewrites the buggy code into subfunctions. If that rewrite already passes
+    every test, no function fails and the debug step never runs, in A or C; such repairs say nothing
+    about A vs C. The fair comparison is on problems where the first decomposition left a failing
+    function in BOTH runs, so both debug steps had to work.
+    """
+    inv = {"A": debug_invocations(A), "C": debug_invocations(C)}
+    runs = {"A": A, "C": C}
+
+    def selected_attempt(p):
+        return p.get("first_public_attempt") if key == "fixed_public_selection" else p.get("first_hidden_attempt")
+
+    lines = ["## Where the debug step mattered", "",
+             "The decomposition step rewrites the code; when that rewrite already passes every test, the debug "
+             "step never runs, in A or C. Those repairs do not distinguish the variants.", "",
+             "| | A | C |", "| --- | --- | --- |"]
+    no_debug, with_debug = {}, {}
+    for v in ("A", "C"):
+        fixed = [t for t in shared if runs[v]["problems"][t].get(key)]
+        no_debug[v] = sum(1 for t in fixed if inv[v][(t, selected_attempt(runs[v]["problems"][t]))] == 0)
+        with_debug[v] = len(fixed) - no_debug[v]
+    lines.append(f"| Repairs where the debug step never ran (decomposition alone) | {no_debug['A']} | {no_debug['C']} |")
+    lines.append(f"| Repairs where the debug step ran | {with_debug['A']} | {with_debug['C']} |")
+
+    hard = [t for t in shared if inv["A"][(t, 1)] > 0 and inv["C"][(t, 1)] > 0]
+    m = len(hard)
+    if m:
+        fa = sum(bool(A["problems"][t].get(key)) for t in hard)
+        fc = sum(bool(C["problems"][t].get(key)) for t in hard)
+        oa = [t for t in hard if A["problems"][t].get(key) and not C["problems"][t].get(key)]
+        oc = [t for t in hard if C["problems"][t].get(key) and not A["problems"][t].get(key)]
+        p = mcnemar_exact(len(oa), len(oc))
+        lines.append(f"| **Problems where both runs' first decomposition left a failing function** | {m} | {m} |")
+        lines.append(f"| Repaired among those | {pct(fa, m)} | {pct(fc, m)} |")
+        lines += ["", f"On those {m} problems: only A repaired {len(oa)}, only C repaired {len(oc)}; exact McNemar "
+                  f"p = {p:.3f}.", f"- Only A: {', '.join(oa) or 'none'}", f"- Only C: {', '.join(oc) or 'none'}"]
+    lines.append("")
+    return lines
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run_a")
@@ -135,6 +185,8 @@ def main():
             fc = sum(bool(C["problems"][t].get(key)) for t in ts)
             out.append(f"| {bt} | {len(ts)} | {pct(fa, len(ts))} | {pct(fc, len(ts))} |")
         out.append("")
+
+    out += debug_step_section(A, C, shared, key)
 
     nodes = [nd for nd in C["nodes"] if nd.get("task_id") in set(shared)]
     if nodes:

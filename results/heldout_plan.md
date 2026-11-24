@@ -7,7 +7,7 @@ result there (149 and 150 of 151, against MGDebugger's 143 of 148, at a tenth of
 fit to that benchmark. This check runs the frozen L2 and MGDebugger (A) on bug sets that played no part
 in designing L2.
 
-## What L2 is (frozen at tag `l2-frozen`)
+## What L2 is (frozen at commit 2b57d71)
 
 Three rules, none of which mentions a benchmark, a bug type or a code pattern:
 
@@ -43,6 +43,9 @@ sets was looked at (to parse their given tests), not L2's behaviour on them.
 passes the given tests (`data_cleaning.md`).
 
 ## Runs
+
+`hdmg/localize.py` and the pipeline are frozen at commit 2b57d71; `run_heldout.sh` stops if
+`hdmg/localize.py` differs from that commit.
 
 Same settings as before: Claude Haiku 5.5, fixed harness, 2 outer attempts, k = 3, 4 shards.
 `scripts/run_heldout.sh`: L2 on HumanEvalFix, then A and L2 on each held-out set.

@@ -14,6 +14,11 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 EXP="$HERE/MGDebugger/src/output_data/experiments"
 AFTER=20261124-140000   # runs started before L2 was frozen don't count
 
+FROZEN=2b57d71          # L2 as frozen in results/heldout_plan.md
+if ! git -C "$HERE" diff --quiet "$FROZEN" -- hdmg/localize.py 2>/dev/null; then
+  echo "hdmg/localize.py differs from the frozen commit $FROZEN (results/heldout_plan.md); not running"; exit 1
+fi
+
 stamp() { basename "$1" | grep -oE '[0-9]{8}-[0-9]{6}$'; }
 
 latest() {  # newest run of dataset $1, variant $2 started after AFTER

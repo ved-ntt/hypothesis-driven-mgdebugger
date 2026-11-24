@@ -153,7 +153,10 @@ class BreakpointTracer:
             self._by_line.setdefault(line, []).append((i, code))
 
     def _global(self, frame, event, arg):
-        if frame.f_code.co_filename == self.filename:
+        # comprehensions, generator expressions and lambdas run in frames of their own before
+        # Python 3.12 (named <listcomp>, <genexpr>, ...); their lines belong to the enclosing
+        # statement, which is already counted, so they are not traced
+        if frame.f_code.co_filename == self.filename and not frame.f_code.co_name.startswith("<"):
             self._last_line[id(frame)] = None   # a new call: its first line is a fresh hit
             return self._local
         return None

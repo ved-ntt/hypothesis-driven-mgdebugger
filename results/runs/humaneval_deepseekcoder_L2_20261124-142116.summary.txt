@@ -1,0 +1,21 @@
+(cleaned seeds: 6 undetectable or unusable bugs excluded)
+Run: output_data/experiments/humaneval_deepseekcoder_L2_20261124-142116
+Variant: L2  k=3  sandbox timeout=5.0 s
+Model: claude-haiku-5-5  stop_on=both  T=None  min_p=False  outer=2
+Dataset: humaneval  seeds from: deepseekcoder  problems: 164  buggy: 32  debugged so far: 32
+
+                               fixed    RSR %    acc %  tokens/problem
+hidden-selection (paper)          30     93.8     95.1            5973
+public-selection                  30     93.8     95.1            5805
+paper                                    76.3     94.5
+
+LLM calls: 99 ok, 0 failed;  per problem: 3.1
+  fix            calls     32   tokens      45573   per problem    1.0 calls,     1424 tok
+  localize       calls     67   tokens     145562   per problem    2.1 calls,     4549 tok
+Localize loop: 34 attempts  {'fixed': 26, 'fixed_fallback': 6, 'not_top_level': 2}
+  rounds 60  {'diverged': 26, 'no_divergence': 25, 'invalid': 3, 'fallback': 6}
+  breakpoints placed 52 (0.9 per round);  attempts that returned a fix: 32
+Spend: $0.055 total, $0.0017 per problem
+Attempts passing public but failing hidden tests (overfit): 2
+Hidden-selection fixes whose winning attempt made no debug call: 0 of 30
+First attempt that passed hidden tests: {1: 30, None: 2}

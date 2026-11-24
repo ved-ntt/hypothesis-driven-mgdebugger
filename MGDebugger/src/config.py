@@ -73,6 +73,12 @@ if HARNESS not in ("fixed", "published"):
 # [hdmg] Skip problems whose buggy code passes every given test ("detectable": false in the cleaned
 # seeds): no debugger that sees only the given tests can find those bugs.
 ONLY_DETECTABLE = os.environ.get("HDMG_ONLY_DETECTABLE", "1") == "1"
+# [hdmg] Exact given tests (fixed harness): the value comparison treats (1, 2) and [1, 2] as equal, but
+# the benchmark's own asserts use Python's ==. With HDMG_EXACT_TESTS=1 a given test passes only if its
+# assert passes, and L / L2 prompts show the expected value as the assert writes it. Off by default so
+# earlier runs stay reproducible; matters on MBPP, whose functions often return tuples.
+EXACT_TESTS = os.environ.get("HDMG_EXACT_TESTS", "0") == "1"
+CURRENT_PUBLIC_TESTS = None
 # [hdmg] Retry backoff for failed LLM calls (rate limits when shards run in parallel), seconds
 RETRY_BACKOFF = float(os.environ.get("HDMG_RETRY_BACKOFF", "2"))
 # [hdmg] Run one shard of the problems: (index, count), set by main.py --shard i/N

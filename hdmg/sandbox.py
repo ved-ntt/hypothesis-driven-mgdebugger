@@ -188,6 +188,30 @@ def run_script(code, timeout=10, mem_mb=1024):
     return False, f"exit code {proc.returncode}: {proc.stderr[-300:]}"
 
 
+def test_call(func_name, test):
+    """The call to run for a test case. If the test carries its assert (HDMG_EXACT_TESTS), the call is
+    taken from the assert's source, so arguments keep their types (a tuple stays a tuple; the parsed
+    JSON input would turn it into a list). Otherwise it is built from the input."""
+    text = (test.get("assert") or "").strip()
+    if text:
+        import ast
+        try:
+            node = ast.parse(text).body[0]
+            for sub in ast.walk(node.test if isinstance(node, ast.Assert) else node):
+                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id == func_name:
+                    src = ast.get_source_segment(text, sub)
+                    if src:
+                        return src
+        except (SyntaxError, IndexError):
+            pass
+    return call_expr_from_input(func_name, test["input"])
+
+
+def assert_passes(code, assert_text, timeout=10):
+    """Does the benchmark's own assert statement pass on `code`? Exact Python semantics: (1, 2) != [1, 2]."""
+    return run_call(code + "\n\n" + assert_text + "\n", "True", timeout=timeout).get("status") == "ok"
+
+
 def sequences(result, call=0, as_repr=False):
     """{var: [values]} from a run_traced result (first call by default)."""
     out = {}

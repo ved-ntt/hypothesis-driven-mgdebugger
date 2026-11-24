@@ -1,0 +1,18 @@
+(cleaned seeds: 12 undetectable or unusable bugs excluded)
+Run: output_data/experiments/humaneval_starcoder_A_20261124-144317
+Variant: A
+Model: claude-haiku-5-5  stop_on=both  T=None  min_p=False  outer=2
+Dataset: humaneval  seeds from: starcoder  problems: 164  buggy: 88  debugged so far: 88
+
+                               fixed    RSR %    acc %  tokens/problem
+hidden-selection (paper)          85     96.6     90.9           30791
+public-selection                  85     96.6     90.9           30519
+
+LLM calls: 991 ok, 0 failed;  per problem: 11.3
+  debug          calls    255   tokens     622454   per problem    2.9 calls,     7073 tok
+  decompose      calls     93   tokens     272000   per problem    1.1 calls,     3091 tok
+  derive_tests   calls    643   tokens    1815112   per problem    7.3 calls,    20626 tok
+Spend: $0.953 total, $0.0108 per problem
+Attempts passing public but failing hidden tests (overfit): 5
+Hidden-selection fixes whose winning attempt made no debug call: 24 of 85  ['HumanEval/101', 'HumanEval/109', 'HumanEval/123', 'HumanEval/129', 'HumanEval/139', 'HumanEval/143', 'HumanEval/97', 'HumanEval/115', 'HumanEval/6', 'HumanEval/78', 'HumanEval/84', 'HumanEval/93', 'HumanEval/102', 'HumanEval/119', 'HumanEval/125', 'HumanEval/135', 'HumanEval/150', 'HumanEval/112', 'HumanEval/122', 'HumanEval/94', 'HumanEval/20', 'HumanEval/33', 'HumanEval/41', 'HumanEval/90']
+First attempt that passed hidden tests: {1: 83, 2: 2, None: 3}

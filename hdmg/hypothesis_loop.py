@@ -16,11 +16,11 @@ from typing import Any, Optional, Protocol
 # Imports the sandbox/tracer module functions for running code safely
 
 try:
-    from .sandbox import run_call, run_traced, call_expr_from_input
+    from .sandbox import assert_passes, run_call, run_traced, call_expr_from_input, test_call
     from .tracer import RETURN, EXCEPTION
     from .compare import from_repr, sequences_equal, values_equal
 except ImportError:
-    from sandbox import run_call, run_traced, call_expr_from_input
+    from sandbox import assert_passes, run_call, run_traced, call_expr_from_input, test_call
     from tracer import RETURN, EXCEPTION
     from compare import from_repr, sequences_equal, values_equal
 
@@ -70,13 +70,19 @@ class NodeResult:
 # Returns (passed, what actually happened); the second part is shown to the LLM as "got ...".
 
 def run_test(program: str, target: str, test: dict, timeout: float = DEFAULT_TIMEOUT) -> tuple[bool, str]:
-    res = run_call(program, call_expr_from_input(target, test["input"]), timeout=timeout)
+    res = run_call(program, test_call(target, test), timeout=timeout)
     status = res.get("status")
     if status == "ok":
         # compared by value (hdmg/compare.py): (1, 2) matches [1, 2], floats within tolerance,
         # round(f(x), n) == y tests carry "round": n
         shown = res.get("result_repr") or repr(res.get("result"))
-        return values_equal(from_repr(shown), test["expected_output"], test.get("round")), shown
+        passed = values_equal(from_repr(shown), test["expected_output"], test.get("round"))
+        exact = test.get("assert")
+        if passed and exact and f"{target}(" in exact and not assert_passes(program, exact, timeout=timeout):
+            # equal after normalization, but the benchmark's assert uses Python's ==: a list where a
+            # tuple is expected fails it (HDMG_EXACT_TESTS; only tests that carry their assert)
+            return False, shown + "  (equal as values, but the test's == fails: check the type, e.g. tuple vs list)"
+        return passed, shown
     if status == "timeout":
         return False, f"timeout after {timeout:g} s"
     if status == "exception":

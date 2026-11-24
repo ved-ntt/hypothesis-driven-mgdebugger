@@ -93,6 +93,11 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
                 # [hdmg] cleaned seeds: every given test, including round(...) and "is None" forms
                 gold_tests = [{k: t[k] for k in ("input", "expected_output", "round") if k in t}
                               for t in problem["public_tests"]]
+                config.CURRENT_PUBLIC_TESTS = problem["public_tests"]
+                if config.EXACT_TESTS and config.VARIANT in ("L", "L2"):
+                    # [hdmg] the loop checks fixes with the test's own assert and shows it in prompts
+                    for g, t in zip(gold_tests, problem["public_tests"]):
+                        g["assert"] = t["assert"]
             else:
                 gold_tests_raw = "\n".join(problem["given_tests"]).replace(entry_point, "candidate")
                 gold_tests = parse_tests(gold_tests_raw, parameter_names, entry_point)["test_cases"]

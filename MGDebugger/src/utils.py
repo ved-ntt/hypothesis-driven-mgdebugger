@@ -261,6 +261,15 @@ def evaluate(code, entry_point, testcase, return_trace=False):
             testcase['actual_output'] = _json_safe(actual)
             assert values_equal(actual, testcase["expected_output"], testcase.get("round")), \
                 f"Expected {expected_output}, but got {output}"
+            if config.EXACT_TESTS and entry_point == config.CURRENT_ENTRY_POINT:
+                # [hdmg] a given test must also pass its own assert (Python ==: (1, 2) != [1, 2])
+                match = next((t for t in (config.CURRENT_PUBLIC_TESTS or [])
+                              if t.get("assert") and t["input"] == testcase["input"]), None)
+                if match is not None:
+                    from hdmg.sandbox import assert_passes
+                    assert assert_passes(f"{STARTING_CODE}\n\n{full_code}", match["assert"]), \
+                        (f"Expected {match['assert'].split('==', 1)[-1].strip()}, but got {output} "
+                         f"(equal as values, but not with ==: check the type, e.g. tuple vs list)")
         else:
             # Update actual_output before assertion
             testcase['actual_output'] = _json_safe(ast.literal_eval(output))  # [hdmg] _json_safe: crash fix

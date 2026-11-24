@@ -227,7 +227,8 @@ def main():
            f"{y} attempted {len(R2['problems'])})",
            f"- Outer attempts: {R1['params'].get('MAX_OUTER_RETRY_EFFECTIVE')} ({x}), "
            f"{R2['params'].get('MAX_OUTER_RETRY_EFFECTIVE')} ({y}); harness {R1['params'].get('HARNESS')} / "
-           f"{R2['params'].get('HARNESS')}" + (f"; {k_note}" if k_note else ""),
+           f"{R2['params'].get('HARNESS')}; exact given tests {bool(R1['params'].get('EXACT_TESTS'))} / "
+           f"{bool(R2['params'].get('EXACT_TESTS'))}" + (f"; {k_note}" if k_note else ""),
            f"- Runs: `{R1['run']}`, `{R2['run']}`", ""]
 
     cost = {v: per_problem_cost(R, set(shared)) for v, R in runs.items()}

@@ -64,6 +64,7 @@ def setup_logging_and_output(input_seeds: str, output_folder: str = None):
             "HYPOTHESIS_K": config.HYPOTHESIS_K,
             "SANDBOX_TIMEOUT": config.SANDBOX_TIMEOUT,
             "HARNESS": config.HARNESS,
+            "EXACT_TESTS": config.EXACT_TESTS,
             "ONLY_DETECTABLE": config.ONLY_DETECTABLE,
             "SHARD": list(config.SHARD) if config.SHARD else None,
         }

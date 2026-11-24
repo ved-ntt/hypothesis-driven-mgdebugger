@@ -15,7 +15,12 @@ HumanEvalFix bugs, 2 outer attempts, fixed harness, 4 parallel shards per varian
 | LLM calls per problem | 10.8 | 13.6 | 3.5 | 2.3 |
 | Wall time (4 shards) | about 1 h | about 55 min | about 12 min | about 6 min |
 
-- **L2 repairs at least as many bugs as MGDebugger at one tenth of the cost.** On the 148 problems both
+- **Held-out check (section at the end): L2's cost advantage is general (6.6x to 9.4x cheaper on every
+  set); its accuracy advantage is not.** On the three held-out sets pooled, A repaired 193 of 224 and L2 181
+  (only A 24, only L2 12, McNemar p = 0.065). Most of the gap is on MBPP and comes from one harness
+  defect, found in the check: given tests were compared by value, so a fix returning a list where the test's
+  assert expects a tuple was accepted. A post-hoc rerun with exact checks is reported separately.
+- **On HumanEvalFix, L2 repairs at least as many bugs as MGDebugger at one tenth of the cost.** On the 148 problems both
   completed: A 143, L2 146 (replicate 147); only A repaired 2 (1), only L2 repaired 5. The accuracy gain
   is not statistically significant (McNemar p = 0.45; replicate p = 0.22); the 9.6x cost reduction is
   the robust result, and L2 is at least as accurate.
@@ -220,3 +225,48 @@ hierarchy is meant to help, is not tested here.
 ## Pilot (12 problems, same settings)
 
 A 11/12, C 12/12 under public-selection; $0.07 each (`ab_humanevalfix_pilot.md`).
+
+## Held-out check of L2 (pre-registered in `heldout_plan.md`)
+
+L2 frozen at commit 2b57d71 (the three rules: observe, don't recompute; a full match is evidence; keep
+partial progress), run against A on HumanEvalFix again and on three bug sets that played no part in its
+design. Same settings as before. Reports: `heldout_<set>.md`.
+
+| Set | Problems | A | L2 | Only A / only L2 | McNemar p | Cost per problem, A / L2 |
+| --- | --- | --- | --- | --- | --- | --- |
+| HumanEvalFix (design set, L2 rerun) | 148 | 143 | 147 | 1 / 5 | 0.22 | $0.0099 / $0.0011 |
+| HumanEval, DeepSeek seeds | 32 | 31 | 30 | 2 / 1 | 1.00 | $0.0162 / $0.0017 |
+| HumanEval, StarCoder seeds | 88 | 85 | 81 | 4 / 0 | 0.13 | $0.0108 / $0.0014 |
+| MBPP, DeepSeek seeds | 104 | 77 | 70 | 18 / 11 | 0.27 | $0.0124 / $0.0019 |
+| **Held-out pooled** | **224** | **193 (86.2%)** | **181 (80.8%)** | **24 / 12** | **0.065** | 8x cheaper |
+
+Repairs under public-selection on the problems both runs completed.
+
+**Against the plan's criterion** ("at least as many as A within chance, at a fraction of the cost"): the
+pooled loss is not significant at 0.05 (p = 0.065), so the criterion is formally met, but L2 repaired 12
+fewer bugs and no held-out set favours it. The honest reading: **L2's cost reduction generalizes; its
+accuracy gain on HumanEvalFix does not.** On held-out bugs L2 is somewhat less accurate than MGDebugger.
+
+### Why L2 loses on the held-out sets
+
+1. **Lenient test check (MBPP, 16 of L2's problems).** The fixed harness compares a given test by value:
+   (1, 2) equals [1, 2], because the cleaned tests are stored as JSON, which has no tuples. The benchmark's
+   own assert uses Python's ==, where they differ. MBPP functions often return tuples. 33 of L2's accepted
+   fixes on MBPP passed the value check but failed the real assert; on 16 problems L2 never produced a fix
+   that passed it. L2 is hit harder than A because it stops at the first fix its check accepts, and its
+   prompts showed the expected value as JSON, so `((6, 7), (4, 9))` appeared as `[[6, 7], [4, 9]]`. A has
+   the same lenient check but rewrites the program from the original code each time it decomposes.
+   HumanEvalFix and HumanEval were not affected (0 such fixes).
+2. **No code to observe (StarCoder, 2 problems).** StarCoder's "solution" to HumanEval/6 and /129 is an
+   empty function body (comments only). There is no line to break on, every L2 round is rejected, and no
+   fix is attempted. A rewrites the function from scratch.
+3. **Fixes that fit thin given tests (all sets).** A fix that passes the given tests but fails the hidden
+   ones: A 16, L2 19 across the held-out sets. MBPP gives one test per problem.
+
+### Post-hoc: MBPP with exact test checks
+
+`HDMG_EXACT_TESTS=1` makes a given test pass only if its own assert passes, runs the test with the
+assert's own arguments (tuples stay tuples), and shows L2 the expected value as the assert writes it.
+It applies to both variants (A's check of the top-level function uses the assert too). Because this was
+added after seeing the held-out results, the rerun is reported as post-hoc, next to the pre-registered
+result above, not instead of it. Result: pending (`heldout_mbpp_exact.md`).

@@ -335,3 +335,44 @@ def test_l2_returns_partial_program_and_plain_l_discards_it():
     assert r.status == "partial" and "x + 1" in r.fixed_program
     r = lz.localize_and_fix(TWO_BUGS, "f", TWO_TESTS, ScriptedLLM(script[:2]), k=1)
     assert r.status == "fix_failed" and r.fixed_program is None
+
+
+# ----- exact given tests (HDMG_EXACT_TESTS)
+
+TUP = "def pairs(xs):\n    res = [list(p) for p in xs]\n    return res\n"
+TUP_TEST = {"input": {"xs": [[1, 2]]}, "expected_output": [[1, 2]], "assert": "assert pairs([(1, 2)]) == ((1, 2),)"}
+
+
+def test_run_test_uses_the_tests_own_assert():
+    from hypothesis_loop import run_test
+    lenient = {k: v for k, v in TUP_TEST.items() if k != "assert"}
+    assert run_test(TUP, "pairs", lenient)[0] is True                 # equal as values
+    passed, shown = run_test(TUP, "pairs", TUP_TEST)
+    assert passed is False and "tuple vs list" in shown
+    good = "def pairs(xs):\n    return tuple(tuple(p) for p in xs)\n"
+    assert run_test(good, "pairs", TUP_TEST)[0] is True
+
+
+def test_prompts_show_the_expected_value_as_the_assert_writes_it():
+    assert repr(lz.shown_expected(TUP_TEST)) == "((1, 2),)"
+    assert lz.shown_expected({"expected_output": [1]}) == [1]
+    loc = {"breakpoints": [{"line": 3, "expr": "res", "expect": [[[1, 2]]]}]}
+    llm = ScriptedLLM([J(loc), "```python\ndef pairs(xs):\n    return tuple(tuple(p) for p in xs)\n```"])
+    # the value matches, so L2 finds no divergence and falls back to a fix with the matched evidence
+    r = lz.localize_and_fix(TUP, "pairs", [TUP_TEST], llm, k=1, observe=True)
+    assert r.status == "fixed_fallback"
+    assert "expected ((1, 2),)" in llm.prompt(0) and "tuple vs list" in llm.prompt(0)
+
+
+def test_exact_tests_call_with_the_asserts_own_arguments():
+    from sandbox import test_call
+    t = {"input": {"xs": [[1, 2]]}, "expected_output": 1, "assert": "assert f(((1, 2),)) == 1"}
+    assert test_call("f", t) == "f(((1, 2),))"
+    assert test_call("f", {"input": {"xs": [[1, 2]]}}) == "f(xs=[[1, 2]])"
+    r = {"input": {"x": 1.234}, "expected_output": 1.23, "assert": "assert round(f(1.234), 2) == 1.23"}
+    assert test_call("f", r) == "f(1.234)"
+    # a function that only works on tuples: the JSON input (lists) would crash, the assert's call works
+    from hypothesis_loop import run_test
+    prog = "def f(xs):\n    return len(xs + ((0, 0),))\n"
+    assert run_test(prog, "f", {"input": {"xs": [[1, 2]]}, "expected_output": 2,
+                                "assert": "assert f(((1, 2),)) == 2"})[0] is True

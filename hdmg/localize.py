@@ -46,11 +46,11 @@ from typing import Any, Callable, Optional
 try:
     from .compare import from_repr, values_equal
     from .hypothesis_loop import DEFAULT_TIMEOUT, LLM, LLMReply, extract_fenced, function_source, run_test
-    from .sandbox import call_expr_from_input, run_breakpoints
+    from .sandbox import call_expr_from_input, run_breakpoints, test_call
 except ImportError:
     from compare import from_repr, values_equal
     from hypothesis_loop import DEFAULT_TIMEOUT, LLM, LLMReply, extract_fenced, function_source, run_test
-    from sandbox import call_expr_from_input, run_breakpoints
+    from sandbox import call_expr_from_input, run_breakpoints, test_call
 
 DEFAULT_K = 3            # localize -> fix rounds per program
 MAX_BREAKPOINTS = 3
@@ -436,6 +436,32 @@ def describe_evidence(program: str, div: dict, bps: list[dict]) -> str:
     return first
 
 
+class ExpectedText:
+    """The expected value as the test's own assert writes it, for prompts: ((6, 7), (4, 9)) stays a
+    tuple of tuples, where the parsed test (JSON) would show [[6, 7], [4, 9]]."""
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def __repr__(self) -> str:
+        return self.text
+
+
+def shown_expected(test: dict) -> Any:
+    """The right-hand side of the test's assert when it carries one (HDMG_EXACT_TESTS), else the value."""
+    text = test.get("assert")
+    if text:
+        try:
+            node = ast.parse(text.strip()).body[0]
+            if isinstance(node, ast.Assert) and isinstance(node.test, ast.Compare) and len(node.test.comparators) == 1:
+                rhs = ast.get_source_segment(text.strip(), node.test.comparators[0])
+                if rhs:
+                    return ExpectedText(rhs)
+        except (SyntaxError, IndexError):
+            pass
+    return test["expected_output"]
+
+
 def _short(text: str, limit: int = 120) -> str:
     text = str(text)
     return text if len(text) <= limit else text[:limit] + "..."
@@ -547,7 +573,7 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
 
     focus_index = next(i for i, (passed, _) in enumerate(baseline) if not passed)
     focus, actual = tests[focus_index], baseline[focus_index][1]
-    call = call_expr_from_input(entry_point, focus["input"])
+    call = test_call(entry_point, focus)
     start_program = program
     lines = breakpoint_lines(program)
     code = line_code(program) if observe else None
@@ -561,7 +587,7 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
     n = 0
     while n < budget:
         n += 1
-        bps, errors = ask_breakpoints(llm, program, call, focus["expected_output"], actual, memory, lines, tried,
+        bps, errors = ask_breakpoints(llm, program, call, shown_expected(focus), actual, memory, lines, tried,
                                       code)
         if bps is None:
             rounds.append(LRound(n, verdict="invalid", outcome="; ".join(errors), validation_errors=errors))
@@ -594,7 +620,7 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
 
         any_diverged = True
         rnd.verdict, rnd.divergence = "diverged", div
-        new_program, fn = ask_fix(llm, program, call, focus["expected_output"], actual, div, annotated)
+        new_program, fn = ask_fix(llm, program, call, shown_expected(focus), actual, div, annotated)
         progressed = False
         rnd.fix_function = fn
         where = f"diverged at line {div['line']} ({div['function']}): `{div['expr']}` expected {_short(div['expected'], 60)} got {_short(div['actual'], 60)}"
@@ -617,7 +643,7 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
                 program, baseline = new_program, results
                 focus_index = next(i for i, (passed, _) in enumerate(baseline) if not passed)
                 focus, actual = tests[focus_index], baseline[focus_index][1]
-                call = call_expr_from_input(entry_point, focus["input"])
+                call = test_call(entry_point, focus)
                 lines, code = breakpoint_lines(program), line_code(program)
                 tried, matched, any_diverged = set(), [], False
                 budget += 1
@@ -628,7 +654,7 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
 
     progressed_any = program != start_program
     if observe and not any_diverged and matched:
-        new_program = ask_fallback_fix(llm, program, call, focus["expected_output"], actual, entry_point, matched)
+        new_program = ask_fallback_fix(llm, program, call, shown_expected(focus), actual, entry_point, matched)
         rnd = LRound(n + 1, verdict="fallback", fix_function=entry_point)
         rounds.append(rnd)
         if new_program is None:

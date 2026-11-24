@@ -183,7 +183,11 @@ breakpoints, the real hits, the divergence and the fix outcome); its LLM calls a
 - Data cleaning: `results/data_cleaning.md`
 - Hypothesis loop, MGDebugger integration, live demo: done (variant C)
 - Harness fixes, parallel runner, A vs C comparison: done
-- **Variant L2 (observe-only breakpoints): as accurate as MGDebugger at one tenth of the cost.** 149 of 151
+- **Held-out check of L2 (HumanEval with DeepSeek and StarCoder bugs, MBPP): cost advantage general
+  (8x cheaper), accuracy advantage not.** Pooled over 224 held-out bugs A repairs 193, L2 181 (p = 0.065).
+  Main cause found: given tests compared by value, not with the assert's `==` (tuple vs list, MBPP);
+  post-hoc rerun with `HDMG_EXACT_TESTS=1` pending. `results/experiment_findings.md`, `results/heldout_*.md`.
+- **Variant L2 (observe-only breakpoints): as accurate as MGDebugger at one tenth of the cost (HumanEvalFix).** 149 of 151
   repaired (replicate: 150), $0.0010 per repair vs A's $0.0102; on the 148 paired problems A 143, L2 146
   (p = 0.45, replicate 147, p = 0.22). See `results/experiment_findings.md` and `results/al2_humanevalfix.md`.
 - **Variant L (breakpoint localization, no decomposition): 6x cheaper, 85% vs 97% repaired.** $0.0019 per

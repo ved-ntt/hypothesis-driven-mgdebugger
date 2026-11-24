@@ -47,14 +47,18 @@ CURRENT_TASK_ID = None
 CURRENT_ATTEMPT = None
 # [hdmg] Debug step at a failing node. "A": MGDebugger as published (LLM-simulated trace).
 # "C": the hypothesis loop (hdmg/mg_adapter.py). Everything else in the pipeline is identical.
+# "L": no decomposition and no derived tests: the LLM places breakpoints on the whole program, the
+# sandbox records real values, the first divergence localizes the bug, then one function is fixed
+# (hdmg/localize.py). It replaces mg_debug in debug_pipeline; the outer loop and scoring are unchanged.
 VARIANT = os.environ.get("HDMG_VARIANT", "A").strip().upper()
-if VARIANT not in ("A", "C"):
-    raise ValueError(f"HDMG_VARIANT must be A or C, got {VARIANT!r}")
-# [hdmg] Variant C: hypotheses per debug attempt, seconds per sandbox run. Pure C: no fallback to
+if VARIANT not in ("A", "C", "L"):
+    raise ValueError(f"HDMG_VARIANT must be A, C or L, got {VARIANT!r}")
+# [hdmg] Variant C: hypotheses per debug attempt; variant L: localize -> fix rounds per attempt.
+# Seconds per sandbox run (both). Pure C: no fallback to
 # debug_function, so every C fix comes from a confirmed hypothesis.
 HYPOTHESIS_K = int(os.environ.get("HDMG_K", "3"))
 SANDBOX_TIMEOUT = float(os.environ.get("HDMG_SANDBOX_TIMEOUT", "5"))
-# [hdmg] Variant C per-node JSONL log; set by main.py to <output_folder>/hypothesis_nodes.jsonl
+# [hdmg] Variant C per-node / variant L per-attempt JSONL log; set by main.py to <output_folder>/hypothesis_nodes.jsonl
 HYPOTHESIS_LOG = None
 # [hdmg] Test harness. "fixed" (default) for every variant: compare test results by value (tuple vs
 # list, float tolerance) instead of repr strings; take the gold tests from the cleaned seeds'

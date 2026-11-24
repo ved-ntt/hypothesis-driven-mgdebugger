@@ -91,7 +91,7 @@ def main():
     # Setup logging and output directory
     output_folder = setup_logging_and_output(input_seeds, args.out)
     config.CALL_LOG = f"{output_folder}/llm_calls.jsonl"
-    config.HYPOTHESIS_LOG = f"{output_folder}/hypothesis_nodes.jsonl"  # [hdmg] variant C only
+    config.HYPOTHESIS_LOG = f"{output_folder}/hypothesis_nodes.jsonl"  # [hdmg] variants C and L
 
     logger.info("Starting MGDebugger pipeline")
     logger.info(f"Input seeds: {input_seeds}")

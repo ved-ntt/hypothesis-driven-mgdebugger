@@ -3,6 +3,7 @@
 Two entry points:
   run_call(code, call_expr)                         -> what the call returned / printed / raised
   run_traced(code, call_expr, func_name, variables) -> the same, plus a VariableTracer record
+  run_breakpoints(code, call_expr, breakpoints)     -> the same, plus every breakpoint hit (variant L)
 
 A timeout or exception is an observation, not an error: it comes back in "status".
 Upstream MGDebugger runs code with exec() in a thread of the debugger's own process;
@@ -37,12 +38,26 @@ if job.get("mem_mb"):
         resource.setrlimit(resource.RLIMIT_AS, (lim, lim))
     except Exception:
         pass  # not available on Windows
-from tracer import VariableTracer
+from tracer import VariableTracer, BreakpointTracer
+class _SoftTimeout(BaseException):
+    pass
+if job.get("soft_timeout"):
+    # stop the program from inside shortly before the parent kills it, so what was recorded
+    # up to then (breakpoint hits) still comes back
+    import signal
+    def _alarm(signum, frame):
+        raise _SoftTimeout()
+    try:
+        signal.signal(signal.SIGALRM, _alarm)
+        signal.setitimer(signal.ITIMER_REAL, job["soft_timeout"])
+    except (AttributeError, ValueError):
+        pass  # no SIGALRM on Windows
 out = {"status": "ok", "stdout": "", "result_repr": None, "result": None}
 buf = io.StringIO()
 real_stdout = sys.stdout
 ns = {"__name__": "__hdmg__"}
 tracer = None
+bp_tracer = None
 try:
     sys.stdout = buf
     try:
@@ -50,7 +65,12 @@ try:
     except Exception:
         pass  # e.g. numpy missing; keep going
     exec(compile(job["code"], "<candidate>", "exec"), ns)
-    if job.get("trace"):
+    if job.get("breakpoints"):
+        bp_tracer = BreakpointTracer([(b["line"], b["expr"]) for b in job["breakpoints"]],
+                                     max_hits=job.get("max_hits", 20), max_repr=job.get("max_repr", 300))
+        with bp_tracer:
+            value = eval(job["call"], ns)
+    elif job.get("trace"):
         t = job["trace"]
         tracer = VariableTracer(t["func"], t["variables"], calls=t.get("calls", "first"),
                                 max_events=t.get("max_events", 500), max_repr=t.get("max_repr", 300))
@@ -63,6 +83,9 @@ try:
         json.dumps(value); out["result"] = value
     except (TypeError, ValueError):
         pass
+except _SoftTimeout:
+    out["status"] = "timeout"
+    out["timeout_s"] = job["soft_timeout"]
 except MemoryError:
     out["status"] = "memory"
 except BaseException as e:
@@ -71,9 +94,16 @@ except BaseException as e:
     out["traceback"] = traceback.format_exc()[-2000:]
 finally:
     sys.stdout = real_stdout
+    if job.get("soft_timeout"):
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        except Exception:
+            pass
 out["stdout"] = buf.getvalue()[-2000:]
 if tracer is not None:
     out["trace"] = tracer.to_dict()
+if bp_tracer is not None:
+    out["breakpoints"] = bp_tracer.to_list()
 print(job["mark"] + json.dumps(out, default=repr))
 '''
 
@@ -104,6 +134,18 @@ def run_traced(code, call_expr, func_name, variables, timeout=5, mem_mb=512, cal
              "max_events": max_events, "max_repr": max_repr}
     return _run({"code": code, "call": call_expr, "prelude": prelude, "mem_mb": mem_mb,
                  "trace": trace}, timeout)
+
+
+def run_breakpoints(code, call_expr, breakpoints, timeout=5, mem_mb=512, max_hits=20, max_repr=300,
+                    prelude=PRELUDE):
+    """run_call, plus the value of each breakpoint's expression every time its line is reached.
+
+    breakpoints: [{"line": int, "expr": str}], line numbers counted in `code` from 1. The result's
+    "breakpoints" lists, per breakpoint, its hits [{"seq", "repr"}] in execution order."""
+    return _run({"code": code, "call": call_expr, "prelude": prelude, "mem_mb": mem_mb,
+                 "breakpoints": [{"line": int(b["line"]), "expr": str(b["expr"])} for b in breakpoints],
+                 "max_hits": max_hits, "max_repr": max_repr,
+                 "soft_timeout": max(0.5, min(timeout - 1.0, timeout * 0.8))}, timeout)
 
 
 def sequences(result, call=0, as_repr=False):

@@ -1,7 +1,9 @@
 # Hypothesis-Driven MGDebugger
 
 CSC 591 project. Keeps MGDebugger's hierarchical recursion (Shi et al., ICSE '26) and replaces
-its LLM-simulated execution with a hypothesis -> prediction -> real observation loop.
+its LLM-simulated execution with a hypothesis -> prediction -> real observation loop (variant C).
+Variant L drops the decomposition entirely and localizes the bug with breakpoints on real execution,
+to cut the token cost.
 
 ## Layout
 
@@ -9,8 +11,11 @@ its LLM-simulated execution with a hypothesis -> prediction -> real observation 
 MGDebugger/          YerbaPage/MGDebugger @ 3e9dc4f (MIT) with small patches, all marked [hdmg]
                      the second commit in this repo's history is exactly our diff against upstream
 hdmg/tracer.py       records chosen variables of one function while it runs (sys.settrace)
-hdmg/sandbox.py      runs code in a child process with timeout + memory cap; run_call, run_traced
+hdmg/tracer.py       also BreakpointTracer: evaluates expressions at chosen lines on every hit
+hdmg/sandbox.py      runs code in a child process with timeout + memory cap; run_call, run_traced,
+                     run_breakpoints
 hdmg/hypothesis_loop.py  variant C at one node: hypothesis -> real run -> harness verdict -> fix
+hdmg/localize.py     variant L: breakpoints with expected values -> real run -> first divergence -> fix
 hdmg/mg_adapter.py   plugs the loop into MGDebugger's recursion (debug_function_hypothesis)
 hdmg/compare.py      value comparison shared by MGDebugger's fixed harness and the loop's verdict
 hdmg/public_tests.py parses given tests (incl. round(...), "is None", helper calls in arguments)
@@ -18,7 +23,8 @@ data/clean/          cleaned seeds: structured public tests, detectable flag (sc
 tests/               pytest for tracer, sandbox, the loop, the adapter, the harness, mg_debug end to end
 scripts/
   run_experiment.sh  one variant on a cleaned dataset, parallel shards, merged + summarized
-  compare_runs.py    A vs C on the same problems: repairs, paired McNemar test, cost, bug types, loop stats
+  compare_runs.py    any two runs (A, C, L) on the same problems: repairs, paired McNemar test, cost
+                     by stage, bug types, loop stats
   clean_data.py      builds data/clean/ and results/data_cleaning.md
   run_variant_a.sh   one run on the original seeds + summary                  [Linux / WSL]
   run_variant_a.ps1  same for Windows PowerShell
@@ -37,7 +43,7 @@ Python 3.10+. Tested on Linux; use WSL on Windows. The PowerShell script and nat
 
 ```
 pip install -r requirements.txt
-python -m pytest -q tests            # 63 tests, ~10 s
+python -m pytest -q tests            # 87 tests, ~10 s
 bash scripts/run_experiment.sh mock humanevalfix C 2 2   # wiring check, no model needed
 ```
 
@@ -113,7 +119,36 @@ comes from a confirmed hypothesis). Settings: `HDMG_K` (3 hypotheses per debug a
 (5 s). A C run also writes `hypothesis_nodes.jsonl` (one line per debug call, with every round), and its LLM
 calls appear in `llm_calls.jsonl` as stages `hypothesis` and `fix`.
 
-The project compares A and C only, on the same pipeline, seeds and budget.
+## Running variant L (breakpoint localization)
+
+A vs C showed that about 80% of MGDebugger's cost is localization machinery: decomposing the program
+(~13%) and asking the LLM to write tests for every subfunction (~67%). Variant L replaces all of it:
+
+1. Run the public tests. If one fails, show the LLM the **numbered** program and that failing test.
+2. The LLM places 1-3 breakpoints: a line, an expression (`total`, `len(stack)`, `s[i:]`), and the values the
+   **correct** program would show on successive hits.
+3. The sandbox runs the failing test with those breakpoints (`run_breakpoints`; values are taken before the
+   line runs, once per loop iteration or recursive call). The earliest hit whose real value differs from the
+   expected one is where the program first goes wrong.
+4. The LLM rewrites the function containing that line (or the helper the wrong value came from), quoting the
+   evidence ("at line 9, `suffix_start` should be 1 on hit #1 but was 3"). The fix must pass every public test.
+5. A round where everything matched, or a fix that failed, goes into memory for the next round
+   (`HDMG_K`, default 3 rounds per attempt).
+
+Expressions are checked before they run (variables, operators, indexing, comprehensions, and a whitelist
+of pure calls like `len`, `sorted`, `s.count`), so a breakpoint cannot change the program's state.
+Everything else (outer attempts, scoring, harness, budget) is the same pipeline as A and C.
+
+```
+bash scripts/run_experiment.sh mock humanevalfix L 2 3               # wiring check, no model needed
+HDMG_RUN_BUDGET_USD=2 bash scripts/run_experiment.sh claude humanevalfix L 4
+python3 scripts/compare_runs.py MGDebugger/src/output_data/experiments/humanevalfix_A_<ts> \
+                                MGDebugger/src/output_data/experiments/humanevalfix_L_<ts> \
+                                --out results/al_humanevalfix.md
+```
+
+An L run writes `hypothesis_nodes.jsonl` with one `"type": "localize"` line per attempt (every round, its
+breakpoints, the real hits, the divergence and the fix outcome); its LLM calls are stages `localize` and `fix`.
 
 `pytest tests` runs the MGDebugger end-to-end tests only when its requirements (loguru, openai) are installed.
 
@@ -123,6 +158,7 @@ The project compares A and C only, on the same pipeline, seeds and budget.
 - Data cleaning: `results/data_cleaning.md`
 - Hypothesis loop, MGDebugger integration, live demo: done (variant C)
 - Harness fixes, parallel runner, A vs C comparison: done
+- Variant L (breakpoint localization, no decomposition): implemented and tested offline; live run pending
 - **A vs C on HumanEvalFix (Claude Haiku 5.5, 151 bugs): no measurable difference.** 143 vs 144 repaired
   of the 148 both runs completed (McNemar p = 1.0), C at about 4% higher cost; a third of repairs come
   from the decomposition rewrite alone. See `results/experiment_findings.md` and `results/ab_humanevalfix.md`.

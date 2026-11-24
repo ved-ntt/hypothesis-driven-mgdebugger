@@ -4,7 +4,7 @@
 #   scripts/run_experiment.sh <backend> <dataset> <variant> [shards] [max_problems_per_shard]
 #     backend: claude | mistral | vllm | ollama | openai | mock      (scripts/backend_env.sh)
 #     dataset: humanevalfix | humaneval   (cleaned seeds in data/clean/, made by scripts/clean_data.py)
-#     variant: A (MGDebugger's simulated trace) | C (hypothesis loop)
+#     variant: A (MGDebugger's simulated trace) | C (hypothesis loop) | L (breakpoint localization, no decomposition)
 #     shards:  parallel processes (default 4)
 #
 # Budget: HDMG_RUN_BUDGET_USD (default 5) is the cap for the whole run, split evenly across shards.
@@ -13,7 +13,7 @@
 # Output: MGDebugger/src/output_data/experiments/<dataset>_<variant>_<timestamp>/ with one folder
 # per shard, merged logs at the top, and summary.txt. Compare two runs with scripts/compare_runs.py.
 set -euo pipefail
-BACKEND=${1:?backend}; DATASET=${2:?dataset}; VARIANT=${3:?variant A or C}
+BACKEND=${1:?backend}; DATASET=${2:?dataset}; VARIANT=${3:?variant A, C or L}
 SHARDS=${4:-4}; MAX=${5:-}
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 

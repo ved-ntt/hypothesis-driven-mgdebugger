@@ -119,3 +119,84 @@ class VariableTracer:
     def to_dict(self):
         return {"func": self.func_name, "variables": self.variables, "calls_seen": self._call_index + 1,
                 "events": self.events, "truncated": self.truncated}
+
+
+class BreakpointTracer:
+    """Evaluates expressions at given lines of the candidate program, each time a line is reached.
+
+    breakpoints: [(line, expression)]. A 'line' event fires before the line runs, so a value is
+    the state just before that line executes; a line inside a loop is hit once per iteration.
+    Only frames of the candidate program (compiled as `filename`) are traced, in any function,
+    including recursive calls. Every hit gets a global sequence number, so the earliest
+    disagreement across breakpoints can be found. An expression that fails to evaluate records
+    "<error: Type: message>" instead of stopping the program.
+    """
+
+    def __init__(self, breakpoints, filename="<candidate>", max_hits=20, max_events=200, max_repr=300):
+        self.breakpoints = [(int(line), str(expr)) for line, expr in breakpoints]
+        self.filename = filename
+        self.max_hits = max_hits
+        self.max_events = max_events
+        self.max_repr = max_repr
+        self.hits = [[] for _ in self.breakpoints]
+        self.truncated = [False for _ in self.breakpoints]
+        self.seq = 0
+        self._by_line = {}
+        self._last_line = {}
+        self.compile_errors = {}
+        for i, (line, expr) in enumerate(self.breakpoints):
+            try:
+                code = compile(expr, "<breakpoint>", "eval")
+            except SyntaxError as e:
+                self.compile_errors[i] = f"<error: SyntaxError: {e.msg}>"
+                continue
+            self._by_line.setdefault(line, []).append((i, code))
+
+    def _global(self, frame, event, arg):
+        if frame.f_code.co_filename == self.filename:
+            self._last_line[id(frame)] = None   # a new call: its first line is a fresh hit
+            return self._local
+        return None
+
+    def _local(self, frame, event, arg):
+        if event != "line":
+            return self._local
+        # Python reports a line again for each step of an inlined comprehension on it (PEP 709);
+        # count a hit only when execution arrives at the line from a different line
+        previous_line = self._last_line.get(id(frame))
+        self._last_line[id(frame)] = frame.f_lineno
+        if frame.f_lineno == previous_line:
+            return self._local
+        if frame.f_lineno in self._by_line and self.seq < self.max_events:
+            for i, code in self._by_line[frame.f_lineno]:
+                if len(self.hits[i]) >= self.max_hits:
+                    self.truncated[i] = True
+                    continue
+                previous = sys.gettrace()
+                sys.settrace(None)   # don't trace the expression's own evaluation
+                try:
+                    # one merged namespace, so comprehensions in the expression see the locals too
+                    ns = dict(frame.f_globals)
+                    ns.update(frame.f_locals)
+                    _, text, _ = _snapshot(eval(code, ns), self.max_repr)
+                except Exception as e:  # noqa: BLE001 - an expression error is an observation
+                    text = f"<error: {type(e).__name__}: {e}>"[: self.max_repr]
+                finally:
+                    sys.settrace(previous)
+                self.seq += 1
+                self.hits[i].append({"seq": self.seq, "repr": text})
+        return self._local
+
+    def __enter__(self):
+        self._previous = sys.gettrace()
+        sys.settrace(self._global)
+        return self
+
+    def __exit__(self, *exc):
+        sys.settrace(self._previous)
+        return False
+
+    def to_list(self):
+        return [{"line": line, "expr": expr, "hits": self.hits[i], "truncated": self.truncated[i],
+                 **({"error": self.compile_errors[i]} if i in self.compile_errors else {})}
+                for i, (line, expr) in enumerate(self.breakpoints)]

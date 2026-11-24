@@ -82,7 +82,7 @@ def main(run_dir):
     print(f"Run: {run_dir}")
     print(f"Variant: {params.get('VARIANT', 'A')}"
           + (f"  k={params.get('HYPOTHESIS_K')}  sandbox timeout={params.get('SANDBOX_TIMEOUT')} s"
-             if params.get("VARIANT") == "C" else ""))
+             if params.get("VARIANT") in ("C", "L") else ""))
     print(f"Model: {params['MODEL']}  stop_on={params.get('STOP_ON')}  T={params.get('TEMPERATURE_EFFECTIVE')}"
           f"  min_p={params.get('USE_MIN_P')}  outer={params.get('MAX_OUTER_RETRY_EFFECTIVE')}")
     print(f"Dataset: {dataset}  seeds from: {seed_model}  problems: {n_total}  buggy: {n_buggy}  debugged so far: {n}")
@@ -101,8 +101,15 @@ def main(run_dir):
     for stage, (k, t) in sorted(by_stage.items()):
         print(f"  {stage:14} calls {k:>6}   tokens {t:>10}   per problem {k / n if n else 0:>6.1f} calls, {t / n if n else 0:>8.0f} tok")
     nodes_path = os.path.join(run_dir, "hypothesis_nodes.jsonl")
-    if os.path.exists(nodes_path):  # variant C
-        nodes = [json.loads(l) for l in open(nodes_path) if l.strip()]
+    nodes = [json.loads(l) for l in open(nodes_path) if l.strip()] if os.path.exists(nodes_path) else []
+    if nodes and nodes[0].get("type") == "localize":  # variant L
+        rounds = [r for nd in nodes for r in nd.get("rounds", [])]
+        print(f"Localize loop: {len(nodes)} attempts  {dict(collections.Counter(nd['status'] for nd in nodes))}")
+        print(f"  rounds {len(rounds)}  {dict(collections.Counter(r['verdict'] for r in rounds))}")
+        bps = [b for r in rounds for b in (r.get("breakpoints") or [])]
+        print(f"  breakpoints placed {len(bps)} ({len(bps) / len(rounds) if rounds else 0:.1f} per round);"
+              f"  attempts that returned a fix: {sum(nd['returned_fix'] for nd in nodes)}")
+    elif nodes:  # variant C
         rounds = [r for nd in nodes for r in nd.get("rounds", [])]
         verdicts = collections.Counter(r["verdict"] for r in rounds)
         judged = verdicts["confirmed"] + verdicts["rejected"]
@@ -122,9 +129,9 @@ def main(run_dir):
     print(f"Attempts passing public but failing hidden tests (overfit): {overfit}")
     # Did the winning attempt call the debug step at all? If not, the "fix" came from the
     # decomposition rewrite (temperature 0.8), picked out by the hidden tests.
-    # variant A's debug step logs as "debug", variant C's as "hypothesis" / "fix"
+    # variant A's debug step logs as "debug", C's as "hypothesis" / "fix", L's as "localize" / "fix"
     debug_calls = collections.Counter((c["task_id"], c["attempt"]) for c in ok
-                                      if c["stage"] in ("debug", "hypothesis", "fix"))
+                                      if c["stage"] in ("debug", "hypothesis", "fix", "localize"))
     winners = [p for p in attempted if p.get("first_hidden_attempt")]
     no_debug = [p["task_id"] for p in winners if debug_calls[(p["task_id"], p["first_hidden_attempt"])] == 0]
     print(f"Hidden-selection fixes whose winning attempt made no debug call: {len(no_debug)} of {len(winners)}"

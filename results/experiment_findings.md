@@ -172,12 +172,12 @@ By bug location (148 problems, all runs):
 
 | Measure | Value |
 | --- | --- |
-| Attempts | 150 (one outer attempt was enough for 149 of 151 problems) |
-| Outcomes | fixed after a divergence 146, fixed after a full match 2, nothing found 2 |
+| Attempts (all 151 problems) | 153 (one outer attempt was enough for 149 problems) |
+| Outcomes | fixed after a divergence 149, fixed after a full match 2, nothing found 2 |
 | First round found a divergence | 126 of 153 attempts (82%) |
-| Rounds | 188: diverged 146, matched everywhere 33, invalid 2, no data 5 |
-| Fix passed the public tests, when a divergence was found | 146 of 146 |
-| Breakpoints per round | 1.03 |
+| Rounds | 191: diverged 149, matched everywhere 33, no data 5, invalid 2, fallback fix 2 |
+| Fix passed the public tests, when a divergence was found | 149 of 149 |
+| Breakpoints per round | 1.04 |
 
 - The observe rule does nearly all of the work: the fallback fix after a full match added 2 repairs in
   run 1 and 4 in run 2. Without it L2 would still repair 147 and 146.

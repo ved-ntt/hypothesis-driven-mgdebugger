@@ -249,3 +249,64 @@ def test_run_script_verdicts_and_runaway_program_is_killed():
     # an infinite loop that allocates: killed by the timeout or the memory cap, never left running
     ok, reason = run_script("xs = []\nwhile True:\n    xs.append([0] * 1000)\n", timeout=3, mem_mb=200)
     assert not ok and ("MemoryError" in reason or "timeout" in reason)
+
+
+# ----- L2: observe-only breakpoints, fix after a full match
+
+MAD = ("def mad(numbers):\n"
+       "    mean = sum(numbers) / len(numbers)\n"
+       "    return sum(abs(x - mean) for x in numbers) / mean\n")
+MAD_TESTS = [{"input": {"numbers": [1.0, 2.0, 3.0, 4.0]}, "expected_output": 1.0}]
+MAD_FIX = ("```python\ndef mad(numbers):\n    mean = sum(numbers) / len(numbers)\n"
+           "    return sum(abs(x - mean) for x in numbers) / len(numbers)\n```")
+
+
+def test_observe_rejects_own_formula_and_accepts_program_code():
+    lines, code = lz.breakpoint_lines(MAD), lz.line_code(MAD)
+
+    def errs(expr):
+        return lz.validate_breakpoints({"breakpoints": [{"line": 3, "expr": expr, "expect": [1]}]}, lines, set(), code)
+    assert "your own computation" in errs("sum(abs(x - mean) for x in numbers) / len(numbers)")[0]
+    assert errs("sum(abs(x - mean) for x in numbers) / mean") == []      # copied, spacing may differ
+    assert errs("sum(abs(x-mean) for x in numbers)/mean") == []
+    assert errs("mean") == [] and errs("numbers[0]") == [] and errs("len(numbers)") == []
+    assert errs("mean * 2")                                               # arithmetic not in the line
+
+
+def test_copied_code_may_call_program_functions_but_not_mutate():
+    prog = "import hashlib\ndef h(t, xs):\n    y = hashlib.md5(t.encode()).hexdigest()\n    xs.append(y)\n    return y\n"
+    lines, code = lz.breakpoint_lines(prog), lz.line_code(prog)
+
+    def errs(line, expr):
+        return lz.validate_breakpoints({"breakpoints": [{"line": line, "expr": expr, "expect": [1]}]}, lines, set(), code)
+    assert errs(3, "hashlib.md5(t.encode()).hexdigest()") == []
+    assert "change the program's state" in errs(4, "xs.append(y)")[0]
+
+
+def test_l_misses_a_return_bug_that_l2_observes():
+    own_formula = {"breakpoints": [{"line": 3, "expr": "sum(abs(x - mean) for x in numbers) / len(numbers)",
+                                    "expect": [1.0]}]}
+    r = lz.localize_and_fix(MAD, "mad", MAD_TESTS, ScriptedLLM([J(own_formula)]), k=1)
+    assert r.status == "no_divergence"                      # L: the model's formula is right, so it matches
+
+    copied = {"breakpoints": [{"line": 3, "expr": "sum(abs(x - mean) for x in numbers) / mean", "expect": [1.0]}]}
+    llm = ScriptedLLM([J(own_formula), J(copied), MAD_FIX])
+    r = lz.localize_and_fix(MAD, "mad", MAD_TESTS, llm, k=1, observe=True)
+    assert r.status == "fixed" and r.rounds[0].divergence["actual"] == "1.6"
+    assert "your own computation" in llm.prompt(1) and llm.calls[0][0]["content"] == lz.LOCALIZE_SYSTEM_OBSERVE
+
+
+def test_fallback_fix_after_full_match():
+    match = {"breakpoints": [{"line": 3, "expr": "mean", "expect": [2.5]}]}
+    llm = ScriptedLLM([J(match), MAD_FIX])
+    r = lz.localize_and_fix(MAD, "mad", MAD_TESTS, llm, k=1, observe=True)
+    assert r.status == "fixed_fallback" and r.rounds[-1].verdict == "fallback"
+    assert "the bug comes after them" in llm.prompt(1) and "`mean` = ['2.5']" in llm.prompt(1)
+    out = lz.debug_program(MAD, "mad", MAD_TESTS, llm=ScriptedLLM([J(match), MAD_FIX]), k=1, observe=True)
+    assert "len(numbers)\n" in out
+
+
+def test_no_fallback_in_plain_l():
+    match = {"breakpoints": [{"line": 3, "expr": "mean", "expect": [2.5]}]}
+    r = lz.localize_and_fix(MAD, "mad", MAD_TESTS, ScriptedLLM([J(match)]), k=1)
+    assert r.status == "no_divergence" and len(r.rounds) == 1

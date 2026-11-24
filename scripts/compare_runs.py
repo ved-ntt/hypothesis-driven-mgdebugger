@@ -73,7 +73,8 @@ def debug_invocations(run: dict) -> collections.Counter:
                                if c.get("ok") and c.get("stage") == "debug")
 
 
-DESCRIPTION = {"A": "simulated trace", "C": "hypothesis loop", "L": "breakpoint localization"}
+DESCRIPTION = {"A": "simulated trace", "C": "hypothesis loop", "L": "breakpoint localization",
+               "L2": "observe-only breakpoints"}
 
 
 def variant(run: dict) -> str:
@@ -178,6 +179,8 @@ def l_loop_section(label: str, nodes: list) -> list:
                    if r.get("verdict") == "diverged" and r.get("fix_function") == nd.get("function"))
     fixed_rounds = [len(nd.get("rounds", [])) for nd in nodes if nd.get("returned_fix")]
     fix_success = sum(1 for r in diverged if str(r.get("outcome", "")).startswith("fixed"))
+    fallback = [r for r in rounds if r.get("verdict") == "fallback"]
+    fallback_ok = sum(1 for r in fallback if str(r.get("outcome", "")).startswith("fixed"))
     return [f"## What {label}'s breakpoint loop did", "",
             "| Measure | Value |", "| --- | --- |",
             f"| Attempts (calls of the loop; one per outer attempt) | {len(nodes)} |",
@@ -185,11 +188,14 @@ def l_loop_section(label: str, nodes: list) -> list:
             f"| Rounds | {len(rounds)} |",
             f"| Diverged / matched everywhere / invalid / no data | {verdicts['diverged']} / {verdicts['no_divergence']} / "
             f"{verdicts['invalid']} / {verdicts['no_data']} |",
+            f"| Invalid replies (after one retry) | {100 * verdicts['invalid'] / len(rounds):.0f}% of rounds |" if rounds else
+            "| Invalid replies | n/a |",
             f"| Divergence kinds (value / missing hit / expression error) | {kinds['value']} / {kinds['missing']} / {kinds['error']} |",
             f"| Breakpoints per valid round (mean) | {len(bps) / (len(rounds) - verdicts['invalid']):.2f} |"
             if len(rounds) > verdicts["invalid"] else "| Breakpoints per valid round | n/a |",
             f"| Fixes that passed the public tests, of fixes tried after a divergence | {fix_success} of {len(diverged)} |",
             f"| Fixes tried in the entry function (vs a helper) | {in_entry} of {len(diverged)} |",
+            f"| Fallback fixes after a full match (L2) that passed | {fallback_ok} of {len(fallback)} |",
             f"| Attempts that returned a fix | {fixes} ({100 * fixes / len(nodes):.0f}%) |" if nodes else
             "| Attempts that returned a fix | n/a |",
             f"| Rounds per returned fix (mean) | {sum(fixed_rounds) / len(fixed_rounds):.2f} |" if fixed_rounds else
@@ -213,7 +219,7 @@ def main():
         raise SystemExit("the two runs have no problem in common")
     seeds_name = os.path.basename(R1["params"]["input_seeds"])
     k_note = "; ".join(f"k = {R['params'].get('HYPOTHESIS_K')} ({v})" for v, R in runs.items()
-                       if variant(R) in ("C", "L"))
+                       if variant(R) in ("C", "L", "L2"))
     out = [f"# {x} vs {y}: {seeds_name}", "",
            f"- {x} = {DESCRIPTION.get(v1, v1)}, {y} = {DESCRIPTION.get(v2, v2)}",
            f"- Model: {R1['params'].get('MODEL')} ({x}), {R2['params'].get('MODEL')} ({y})",
@@ -280,7 +286,7 @@ def main():
         nodes = [nd for nd in R["nodes"] if nd.get("task_id") in set(shared)]
         if variant(R) == "C" and nodes:
             out += c_loop_section(v, nodes)
-        elif variant(R) == "L" and nodes:
+        elif variant(R) in ("L", "L2") and nodes:
             out += l_loop_section(v, nodes)
 
     text = "\n".join(out) + "\n"

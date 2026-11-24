@@ -15,6 +15,14 @@ about 80% of the token cost (decompose ~13%, derive tests ~67%). Variant L skips
   5. No divergence (every breakpoint matched) also goes into memory, so the next round looks
      elsewhere. Up to k rounds.
 
+Variant L2 (observe=True) adds two changes, aimed at L's main miss on HumanEvalFix: a bug inside a
+`return` expression, where every value computed before the line is correct and the model, free to
+write any expression, wrote the correct formula and saw it match.
+  - Observe, don't recompute: a breakpoint expression must be a value the program holds (a variable,
+    an element, a slice, its length) or a piece of the program's own code on that line, copied.
+  - A full match is evidence too: when every round matched and nothing was fixed, one more fix call
+    gets all the matched values ("correct up to here") and rewrites the entry function.
+
 The localization is real execution, not the LLM's simulation: the LLM predicts what SHOULD
 happen and the sandbox says what DID happen, the same contract as variant C's hypotheses, but on
 the whole program at once instead of node by node.
@@ -59,7 +67,7 @@ class LRound:
     n: int
     breakpoints: Optional[list] = None   # [{line, expr, expect, function, hits: [repr], truncated}]
     run_status: str = ""
-    verdict: str = ""                    # invalid | no_divergence | diverged | no_data
+    verdict: str = ""                    # invalid | no_divergence | diverged | no_data | fallback
     divergence: Optional[dict] = None    # {line, function, expr, hit, expected, actual, kind}
     fix_function: Optional[str] = None   # which function the fix rewrote
     outcome: str = ""
@@ -68,7 +76,7 @@ class LRound:
 
 @dataclass
 class LResult:
-    status: str                          # already_passing | fixed | fix_failed | no_divergence
+    status: str                          # already_passing | fixed | fixed_fallback | fix_failed | no_divergence
     fixed_program: Optional[str] = None
     rounds: list = field(default_factory=list)
 
@@ -105,6 +113,103 @@ def breakpoint_lines(program: str) -> dict[int, str]:
     return lines
 
 
+def line_code(program: str) -> dict[int, list[str]]:
+    """{line: the program's own expressions on that line, as ast.unparse text}, for observe mode.
+
+    For if/while/for headers only the header (test, target, iter), not the body."""
+    try:
+        tree = ast.parse(program)
+    except SyntaxError:
+        return {}
+    out: dict[int, list[str]] = {}
+    for top in tree.body:
+        if not isinstance(top, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for st in ast.walk(top):
+            if st is top or not isinstance(st, ast.stmt) or _is_docstring(st):
+                continue
+            if isinstance(st, (ast.If, ast.While)):
+                roots = [st.test]
+            elif isinstance(st, (ast.For, ast.AsyncFor)):
+                roots = [st.target, st.iter]
+            elif isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Try, ast.With)):
+                roots = []
+            else:
+                roots = [st]
+            seen = out.setdefault(st.lineno, [])
+            for root in roots:
+                for node in ast.walk(root):
+                    if isinstance(node, ast.expr) and not isinstance(node, (ast.Lambda,)):
+                        text = ast.unparse(node)
+                        if text not in seen:
+                            seen.append(text)
+    return out
+
+
+def _is_state(node: ast.AST, in_index: bool = False) -> bool:
+    """A plain read of program state: names, constants, elements, slices, attributes, tuples/lists of
+    those, and whitelisted calls on them (len(xs), sorted(d)). Arithmetic only inside an index."""
+    if isinstance(node, (ast.Name, ast.Constant)):
+        return True
+    if isinstance(node, ast.Attribute):
+        return not node.attr.startswith("_") and _is_state(node.value, in_index)
+    if isinstance(node, ast.Subscript):
+        return _is_state(node.value, in_index) and _is_state(node.slice, True)
+    if isinstance(node, ast.Slice):
+        return all(p is None or _is_state(p, True) for p in (node.lower, node.upper, node.step))
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return all(_is_state(e, in_index) for e in node.elts)
+    if isinstance(node, ast.UnaryOp):
+        return _is_state(node.operand, in_index)
+    if isinstance(node, ast.BinOp):
+        return in_index and _is_state(node.left, True) and _is_state(node.right, True)
+    if isinstance(node, ast.Call):
+        return (isinstance(node.func, ast.Name) and node.func.id in SAFE_CALLS and not node.keywords
+                and all(_is_state(a, in_index) for a in node.args))
+    return False
+
+
+def check_observes(expr: str, line: int, code: dict[int, list[str]]) -> list[str]:
+    """Observe mode: the expression must read program state or copy the program's code on the line."""
+    try:
+        node = ast.parse(expr, mode="eval").body
+    except SyntaxError:
+        return []  # reported by check_expression
+    if _is_state(node) or ast.unparse(node) in code.get(line, []):
+        return []
+    pieces = sorted(code.get(line, []), key=len, reverse=True)[:6]
+    return [f"expression {expr!r} is your own computation, not something the program computes at line "
+            f"{line}. Name a variable or element, or copy a piece of line {line}'s code exactly"
+            + (f", e.g. {', '.join(repr(p) for p in pieces)}" if pieces else "")]
+
+
+MUTATING_METHODS = {"append", "extend", "insert", "pop", "remove", "clear", "sort", "reverse", "update", "add",
+                    "discard", "setdefault", "popitem", "write", "writelines", "send", "close", "seed",
+                    "shuffle", "put", "get_nowait", "appendleft", "popleft", "rotate", "heappush", "heappop",
+                    "heapify", "heapreplace", "heappushpop"}
+UNSAFE_NAMES = {"print", "input", "exec", "eval", "compile", "open", "__import__", "setattr", "delattr",
+                "exit", "quit", "globals", "locals", "vars", "breakpoint", "next", "iter"}
+
+
+def check_copied_expression(expr: str) -> list[str]:
+    """A piece of the program's own code (observe mode). It runs once more when the breakpoint is hit,
+    so it may call what the program calls (its own helpers, math, hashlib...), but nothing that
+    changes state: no mutating methods, no assignment expressions, no I/O."""
+    tree = ast.parse(expr, mode="eval")
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.NamedExpr, ast.Lambda, ast.Await, ast.Yield, ast.YieldFrom)):
+            return [f"expression {expr!r} uses {type(node).__name__}, which is not allowed"]
+        if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            return [f"expression {expr!r} reads a private attribute {node.attr!r}"]
+        if isinstance(node, ast.Call):
+            f = node.func
+            name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+            if name in MUTATING_METHODS or name in UNSAFE_NAMES:
+                return [f"expression {expr!r} calls {name}, which could change the program's state; "
+                        f"observe its arguments or the variable instead"]
+    return []
+
+
 def check_expression(expr: str) -> list[str]:
     """Errors if the expression could change state or isn't a plain read of program values."""
     try:
@@ -129,7 +234,8 @@ def check_expression(expr: str) -> list[str]:
     return errors[:3]
 
 
-def validate_breakpoints(reply: Any, lines: dict[int, str], tried: set) -> list[str]:
+def validate_breakpoints(reply: Any, lines: dict[int, str], tried: set,
+                         code: Optional[dict[int, list[str]]] = None) -> list[str]:
     if not isinstance(reply, dict) or not isinstance(reply.get("breakpoints"), list):
         return ['reply must be a JSON object with a "breakpoints" list']
     bps = reply["breakpoints"]
@@ -151,7 +257,18 @@ def validate_breakpoints(reply: Any, lines: dict[int, str], tried: set) -> list[
         if not isinstance(expr, str) or not expr.strip():
             errors.append(f"{where}: expr must be a non-empty string")
         else:
-            errors.extend(f"{where}: {e}" for e in check_expression(expr))
+            copied = False
+            if code is not None and isinstance(line, int) and line in lines:
+                try:
+                    copied = ast.unparse(ast.parse(expr, mode="eval").body) in code.get(line, [])
+                except SyntaxError:
+                    pass
+            if copied:
+                errors.extend(f"{where}: {e}" for e in check_copied_expression(expr))
+            else:
+                errors.extend(f"{where}: {e}" for e in check_expression(expr))
+                if code is not None and isinstance(line, int) and line in lines:
+                    errors.extend(f"{where}: {e}" for e in check_observes(expr, line, code))
         if not isinstance(expect, list) or not expect:
             errors.append(f"{where}: expect must be a non-empty list of values, one per hit")
         elif len(expect) > MAX_EXPECT:
@@ -187,6 +304,34 @@ LOCALIZE_SYSTEM = (
     "returned) so a mismatch narrows the bug to a few lines. Don't reuse breakpoints from earlier rounds.\n"
     "Reply with one ```json block, nothing else:\n"
     '{"breakpoints": [{"line": 7, "expr": "total", "expect": [0, 1, 3]}], "why": "one sentence"}'
+)
+
+LOCALIZE_SYSTEM_OBSERVE = (
+    "You localize bugs in Python programs with breakpoints. A breakpoint is a line number and a Python "
+    "expression. When the failing test runs, the expression is evaluated each time execution reaches that "
+    "line, BEFORE the line runs, and the real values are recorded. For each breakpoint you give the value the "
+    "expression must have on each hit for the function to produce the correct result (the one the docstring "
+    "and the tests describe). The first recorded value that differs from yours shows where the program goes "
+    "wrong.\n"
+    "OBSERVE THE PROGRAM, DON'T RECOMPUTE IT. An expression must be either\n"
+    "  (a) a value the program holds: a variable, an element or slice (`xs[i]`, `s[i:]`), an attribute, or "
+    "len/sorted/... of those; or\n"
+    "  (b) a piece of the program's own code on that line, copied exactly (e.g. on `return total / count` "
+    "you may use `total / count`, `total` or `count`).\n"
+    "Your own formula is rejected: it would test your formula, not the program.\n"
+    "Rules:\n"
+    "- Line numbers refer to the numbered listing. Use a line where a statement inside a function starts.\n"
+    "- The bug is often in the last line that runs, e.g. inside the returned expression. Values computed "
+    "before it can all be correct; to check that line, break ON it and copy the returned expression or its "
+    "parts.\n"
+    "- A loop header, or a line inside a loop, is hit once per iteration; a line in a recursive function "
+    "is hit in every call. A variable assigned ON the line still has its old value there.\n"
+    "- 1 to " + str(MAX_BREAKPOINTS) + " breakpoints, each with 1 to " + str(MAX_EXPECT) + " expected values "
+    "in JSON (lists for tuples, null for None, sorted lists for sets). If a line is hit more often than "
+    "you list, only the values you list are checked.\n"
+    "- Don't reuse breakpoints from earlier rounds; if earlier ones matched, the bug comes after them.\n"
+    "Reply with one ```json block, nothing else:\n"
+    '{"breakpoints": [{"line": 7, "expr": "total / count", "expect": [2.5]}], "why": "one sentence"}'
 )
 
 FIX_SYSTEM_L = ("You fix Python programs. The breakpoint evidence shows where the program first differs "
@@ -308,12 +453,14 @@ def parse_reply(text: str) -> tuple[Optional[Any], list[str]]:
 
 
 def ask_breakpoints(llm: LLM, program: str, call: str, expected: Any, actual: str, memory: list[str],
-                    lines: dict[int, str], tried: set) -> tuple[Optional[list], list[str]]:
-    messages = [{"role": "system", "content": LOCALIZE_SYSTEM},
+                    lines: dict[int, str], tried: set,
+                    code: Optional[dict[int, list[str]]] = None) -> tuple[Optional[list], list[str]]:
+    system = LOCALIZE_SYSTEM if code is None else LOCALIZE_SYSTEM_OBSERVE
+    messages = [{"role": "system", "content": system},
                 {"role": "user", "content": localize_prompt(program, call, expected, actual, memory)}]
     reply = llm.complete(messages)
     data, errors = parse_reply(reply.text)
-    errors = errors or validate_breakpoints(data, lines, tried)
+    errors = errors or validate_breakpoints(data, lines, tried, code)
     if errors:
         retry = ("Your breakpoint reply was invalid:\n" + "\n".join(errors) +
                  "\nReply again with one corrected ```json block.")
@@ -321,10 +468,32 @@ def ask_breakpoints(llm: LLM, program: str, call: str, expected: Any, actual: st
                                {"role": "user", "content": retry}]
         reply = llm.complete(messages)
         data, errors = parse_reply(reply.text)
-        errors = errors or validate_breakpoints(data, lines, tried)
+        errors = errors or validate_breakpoints(data, lines, tried, code)
     if errors:
         return None, errors
     return [{"line": b["line"], "expr": b["expr"].strip(), "expect": b["expect"]} for b in data["breakpoints"]], []
+
+
+def ask_fallback_fix(llm: LLM, program: str, call: str, expected: Any, actual: str, entry_point: str,
+                     matched: list[dict]) -> Optional[str]:
+    """Observe mode, when every round matched: the matched values say the program is right up to
+    those points, so the bug is after them. One fix of the entry function with that evidence."""
+    lines = [f"line {b['line']} (`{_source_line(program, b['line'])}`): `{b['expr']}` = "
+             f"{_short(b['hits'][:len(b['expect'])], 80)}" for b in matched]
+    evidence = ("Every breakpoint matched the correct program, so the program is right at these points and "
+                "the bug comes after them (or in code they did not cover):\n" + "\n".join(lines[-9:]))
+    prompt = fix_prompt(program, call, expected, actual, evidence, entry_point)
+    reply = llm.complete([{"role": "system", "content": FIX_SYSTEM_L}, {"role": "user", "content": prompt}])
+    known = set(top_level_functions(program))
+    for block in reversed(re.findall(r"```(?:python|py)?\s*\n(.*?)```", reply.text, re.DOTALL)):
+        names = [n for n in top_level_functions(block) if n in known]
+        if not names:
+            continue
+        name = entry_point if entry_point in names else names[0]
+        source = function_source(block, name)
+        if source:
+            return replace_top_level(program, name, source)
+    return None
 
 
 def top_level_functions(code: str) -> list[str]:
@@ -367,7 +536,7 @@ def replace_top_level(program: str, name: str, new_source: str) -> str:
 # ----- the loop
 
 def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM, k: int = DEFAULT_K,
-                     timeout: float = DEFAULT_TIMEOUT) -> LResult:
+                     timeout: float = DEFAULT_TIMEOUT, observe: bool = False) -> LResult:
     baseline = [run_test(program, entry_point, t, timeout) for t in tests]
     if all(passed for passed, _ in baseline):
         return LResult(status="already_passing")
@@ -376,13 +545,16 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
     focus, actual = tests[focus_index], baseline[focus_index][1]
     call = call_expr_from_input(entry_point, focus["input"])
     lines = breakpoint_lines(program)
+    code = line_code(program) if observe else None
+    matched: list[dict] = []   # breakpoints of rounds where everything matched (observe mode fallback)
     memory: list[str] = []
     rounds: list[LRound] = []
     tried: set = set()
     any_diverged = False
 
     for n in range(1, k + 1):
-        bps, errors = ask_breakpoints(llm, program, call, focus["expected_output"], actual, memory, lines, tried)
+        bps, errors = ask_breakpoints(llm, program, call, focus["expected_output"], actual, memory, lines, tried,
+                                      code)
         if bps is None:
             rounds.append(LRound(n, verdict="invalid", outcome="; ".join(errors), validation_errors=errors))
             memory.append(f"Round {n}: invalid reply ({_short('; '.join(errors))})")
@@ -407,6 +579,7 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
             rnd.outcome = "every breakpoint matched the correct program; the bug is elsewhere"
             if notes:
                 rnd.outcome += " (unusable: " + "; ".join(notes) + ")"
+            matched.extend(b for b in annotated if b["hits"] and not any(h.startswith("<error") for h in b["hits"]))
             memory.append(f"Round {n}: {summary} | MATCHED, so the bug is not before these points"
                           + (f" | unusable: {'; '.join(notes)}" if notes else ""))
             continue
@@ -427,6 +600,19 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
             rnd.outcome = f"rewrote {fn}, tests still fail: " + "; ".join(failures[:3])
         memory.append(f"Round {n}: {summary} | {where} | {rnd.outcome}")
 
+    if observe and not any_diverged and matched:
+        new_program = ask_fallback_fix(llm, program, call, focus["expected_output"], actual, entry_point, matched)
+        rnd = LRound(k + 1, verdict="fallback", fix_function=entry_point)
+        rounds.append(rnd)
+        if new_program is None:
+            rnd.outcome = "the fallback fix reply had no usable ```python block"
+        else:
+            results = [run_test(new_program, entry_point, t, timeout) for t in tests]
+            if all(passed for passed, _ in results):
+                rnd.outcome = f"fixed {entry_point} after a full match"
+                return LResult(status="fixed_fallback", fixed_program=new_program, rounds=rounds)
+            failures = [f"[{i}] got {_short(got, 80)}" for i, (passed, got) in enumerate(results) if not passed]
+            rnd.outcome = "fallback fix failed: " + "; ".join(failures[:3])
     return LResult(status="fix_failed" if any_diverged else "no_divergence", rounds=rounds)
 
 
@@ -454,7 +640,7 @@ class StagedLLM:
 def debug_program(buggy_code: str, entry_point: str, gold_tests: list, *,
                   complete: Optional[Callable[[list], str]] = None, llm: Optional[LLM] = None,
                   k: int = DEFAULT_K, timeout: float = DEFAULT_TIMEOUT, log_path: Optional[str] = None,
-                  log_context: Optional[dict] = None) -> str:
+                  log_context: Optional[dict] = None, observe: bool = False) -> str:
     """Variant L's replacement for mg_debug(buggy_code, gold_tests): returns the fixed program, or
     the program unchanged when no fix passed every public test. Logs one JSON line per call.
 
@@ -469,7 +655,7 @@ def debug_program(buggy_code: str, entry_point: str, gold_tests: list, *,
             raise TypeError("pass complete= or llm=")
         llm = StagedLLM(complete)
     t0 = time.time()
-    record = {"type": "localize", **(log_context or {}), "function": entry_point}
+    record = {"type": "localize", "observe": observe, **(log_context or {}), "function": entry_point}
     tests = [t for t in gold_tests if isinstance(t, dict) and "input" in t and "expected_output" in t]
     program = runnable_program(buggy_code)
 
@@ -480,13 +666,13 @@ def debug_program(buggy_code: str, entry_point: str, gold_tests: list, *,
         status = "not_top_level"
     else:
         try:
-            result = localize_and_fix(program, entry_point, tests, llm, k=k, timeout=timeout)
+            result = localize_and_fix(program, entry_point, tests, llm, k=k, timeout=timeout, observe=observe)
             status = result.status
         except Exception as e:
             status = "error"
             record["error"] = f"{type(e).__name__}: {e}"
 
-    fixed = result.fixed_program if result is not None and status == "fixed" else None
+    fixed = result.fixed_program if result is not None and status in ("fixed", "fixed_fallback") else None
     if log_path:
         record.update(status=status, returned_fix=fixed is not None, seconds=round(time.time() - t0, 2),
                       rounds=[asdict(r) for r in result.rounds] if result is not None else [])

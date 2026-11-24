@@ -51,8 +51,9 @@ CURRENT_ATTEMPT = None
 # sandbox records real values, the first divergence localizes the bug, then one function is fixed
 # (hdmg/localize.py). It replaces mg_debug in debug_pipeline; the outer loop and scoring are unchanged.
 VARIANT = os.environ.get("HDMG_VARIANT", "A").strip().upper()
-if VARIANT not in ("A", "C", "L"):
-    raise ValueError(f"HDMG_VARIANT must be A, C or L, got {VARIANT!r}")
+# "L2": L with observe-only breakpoints and a fix after a full match (hdmg/localize.py, observe=True).
+if VARIANT not in ("A", "C", "L", "L2"):
+    raise ValueError(f"HDMG_VARIANT must be A, C, L or L2, got {VARIANT!r}")
 # [hdmg] Variant C: hypotheses per debug attempt; variant L: localize -> fix rounds per attempt.
 # Seconds per sandbox run (both). Pure C: no fallback to
 # debug_function, so every C fix comes from a confirmed hypothesis.

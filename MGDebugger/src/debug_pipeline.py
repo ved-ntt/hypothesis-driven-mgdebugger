@@ -109,12 +109,13 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
             for outer_retry in range(config.MAX_OUTER_RETRY):
                 config.CURRENT_ATTEMPT = outer_retry + 1
                 tok0 = config.TOTAL_PROMPT_TOKENS + config.TOTAL_COMPLETION_TOKENS
-                if config.VARIANT == "L":
+                if config.VARIANT in ("L", "L2"):
                     # [hdmg] variant L: localize with breakpoints on the whole program, fix one function
                     fixed_code = _localizer()(
                         buggy_code, entry_point, gold_tests, complete=get_completion_with_retry,
                         k=config.HYPOTHESIS_K, timeout=config.SANDBOX_TIMEOUT, log_path=config.HYPOTHESIS_LOG,
-                        log_context={"task_id": config.CURRENT_TASK_ID, "attempt": config.CURRENT_ATTEMPT})
+                        log_context={"task_id": config.CURRENT_TASK_ID, "attempt": config.CURRENT_ATTEMPT},
+                        observe=config.VARIANT == "L2")
                 else:
                     fixed_code = mg_debug(buggy_code, gold_tests)
                 problem['fixed_codes'].append(fixed_code)

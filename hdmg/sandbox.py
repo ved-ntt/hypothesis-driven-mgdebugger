@@ -78,7 +78,7 @@ try:
             value = eval(job["call"], ns)
     else:
         value = eval(job["call"], ns)
-    out["result_repr"] = repr(value)[:2000]
+    out["result_repr"] = repr(value)[:job.get("max_result", 2000)]
     try:
         json.dumps(value); out["result"] = value
     except (TypeError, ValueError):
@@ -122,9 +122,10 @@ def _run(job, timeout):
     return {"status": "crash", "returncode": proc.returncode, "stderr": proc.stderr[-2000:]}
 
 
-def run_call(code, call_expr, timeout=5, mem_mb=512, prelude=PRELUDE):
+def run_call(code, call_expr, timeout=5, mem_mb=512, prelude=PRELUDE, max_result=2000):
     """Execute `code`, then evaluate `call_expr` (e.g. "make_palindrome('cata')")."""
-    return _run({"code": code, "call": call_expr, "prelude": prelude, "mem_mb": mem_mb}, timeout)
+    return _run({"code": code, "call": call_expr, "prelude": prelude, "mem_mb": mem_mb,
+                 "max_result": max_result}, timeout)
 
 
 def run_traced(code, call_expr, func_name, variables, timeout=5, mem_mb=512, calls="first",

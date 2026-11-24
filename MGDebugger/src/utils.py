@@ -187,6 +187,7 @@ def evaluate_simple(code, entry_point, all_test, max_memory=100 * 1024 * 1024):
 
 
 def evaluate(code, entry_point, testcase, return_trace=False):
+    import config  # [hdmg]
     logger.info(f"Evaluating {entry_point} with testcase: {testcase['input']}")
 
     # Extract all functions from the code
@@ -204,7 +205,21 @@ def evaluate(code, entry_point, testcase, return_trace=False):
     # entry_point_calls = [node.func.id for node in ast.walk(entry_point_tree) if isinstance(node, ast.Call)]
     # functions = {name: func for name, func in functions.items() if name in entry_point_calls}
     # directly search for the string
-    functions = {name: func for name, func in functions.items() if name in entry_point_function}
+    if config.HARNESS == "fixed":
+        # [hdmg] helpers of helpers too: upstream keeps only names mentioned in the entry function and
+        # relies on functions an earlier exec() left in this module's globals; the child process
+        # used under the fixed harness starts clean
+        keep, frontier = set(), [entry_point]
+        while frontier:
+            body = functions.get(frontier.pop(), "")
+            for name in functions:
+                if name not in keep and name in body:
+                    keep.add(name)
+                    frontier.append(name)
+        keep.add(entry_point)
+        functions = {name: func for name, func in functions.items() if name in keep}
+    else:
+        functions = {name: func for name, func in functions.items() if name in entry_point_function}
     logger.info(f"Filtered functions: {', '.join(functions.keys())}")
 
     # Combine all functions into a single code block
@@ -228,8 +243,26 @@ def evaluate(code, entry_point, testcase, return_trace=False):
     sys.stdout = new_stdout
 
     try:
-        function_with_timeout(exec, (test_code, globals()), timeout=10)
-        output = new_stdout.getvalue().strip()
+        import config as _config  # [hdmg]
+        if _config.HARNESS == "fixed":
+            # [hdmg] run the test in a child process (hdmg/sandbox.run_call), not in a thread of this
+            # one: a timed-out thread can't be stopped, and a program that loops while allocating then
+            # grows until the OS kills the whole run. Same printed repr as upstream's print(repr(...)).
+            sys.stdout = old_stdout
+            from hdmg.sandbox import run_call as _run_call
+            call = (f"{entry_point}(**{input_repr})" if isinstance(testcase['input'], dict)
+                    else f"{entry_point}({input_repr})")
+            res = _run_call(f"{STARTING_CODE}\n\n{full_code}", call, timeout=10, prelude="", max_result=10 ** 7)
+            if res.get("status") == "timeout":
+                raise TimeoutError()
+            if res.get("status") == "exception":
+                raise RuntimeError((res.get("exception") or "").split(": ", 1)[-1])
+            if res.get("status") != "ok":
+                raise RuntimeError(f"run ended with status {res.get('status')}")
+            output = (res.get("result_repr") or "").strip()
+        else:
+            function_with_timeout(exec, (test_code, globals()), timeout=10)
+            output = new_stdout.getvalue().strip()
         sys.stdout = old_stdout
 
         # Convert both expected and actual output to the same type for comparison

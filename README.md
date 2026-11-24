@@ -147,6 +147,9 @@ python3 scripts/compare_runs.py MGDebugger/src/output_data/experiments/humaneval
                                 --out results/al_humanevalfix.md
 ```
 
+If a run is cut off (closed terminal, crash), resume it: only the problems no shard finished are run again.
+`HDMG_RESUME=MGDebugger/src/output_data/experiments/<run> bash scripts/run_experiment.sh claude humanevalfix L 4`
+
 An L run writes `hypothesis_nodes.jsonl` with one `"type": "localize"` line per attempt (every round, its
 breakpoints, the real hits, the divergence and the fix outcome); its LLM calls are stages `localize` and `fix`.
 
@@ -158,7 +161,10 @@ breakpoints, the real hits, the divergence and the fix outcome); its LLM calls a
 - Data cleaning: `results/data_cleaning.md`
 - Hypothesis loop, MGDebugger integration, live demo: done (variant C)
 - Harness fixes, parallel runner, A vs C comparison: done
-- Variant L (breakpoint localization, no decomposition): implemented and tested offline; live run pending
+- **Variant L (breakpoint localization, no decomposition): 6x cheaper, 85% vs 97% repaired.** $0.0019 per
+  repair vs A's $0.0102; 129 of 151 repaired. 20 of its 22 misses are bugs inside a `return` expression,
+  which a breakpoint taken before the line cannot see; on all other bugs it repairs 80 of 82, as many as C.
+  See `results/experiment_findings.md`, `results/al_humanevalfix.md`, `results/cl_humanevalfix.md`.
 - **A vs C on HumanEvalFix (Claude Haiku 5.5, 151 bugs): no measurable difference.** 143 vs 144 repaired
   of the 148 both runs completed (McNemar p = 1.0), C at about 4% higher cost; a third of repairs come
   from the decomposition rewrite alone. See `results/experiment_findings.md` and `results/ab_humanevalfix.md`.

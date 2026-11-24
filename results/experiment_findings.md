@@ -1,10 +1,25 @@
-# A vs C on HumanEvalFix: findings
+# A vs C vs L on HumanEvalFix: findings
 
 Run on 23 Nov 2026 with Claude Haiku 5.5 (temperature 1.0, the endpoint's minimum), 151 detectable
 HumanEvalFix bugs, 2 outer attempts, fixed harness, 4 parallel shards per variant. Full report:
 `ab_humanevalfix.md`; run summaries and settings: `runs/`.
 
-## Result: no measurable difference in repairs
+## Summary
+
+| | A: simulated trace | C: hypothesis loop | L: breakpoint localization |
+| --- | --- | --- | --- |
+| Repaired, public-selection (problems the run completed) | 143 / 148 (96.6%) | 147 / 151 (97.4%) | 129 / 151 (85.4%) |
+| Cost per problem | $0.0099 | $0.0102 | $0.0016 |
+| Cost per repair | $0.0102 | $0.0105 | $0.0019 |
+| Tokens per problem | 28,760 | 33,035 | 5,866 |
+| LLM calls per problem | 10.8 | 13.6 | 3.5 |
+
+- A and C: no measurable difference (below).
+- L costs one sixth as much and repairs fewer bugs (paired against A: p = 0.002; against C: p = 0.001).
+  The whole gap comes from one kind of bug, a mistake inside a `return` expression; on every other
+  bug L repairs as many as C (section "Variant L" below).
+
+## A vs C: no measurable difference in repairs
 
 | | A: simulated trace | C: hypothesis loop |
 | --- | --- | --- |
@@ -52,9 +67,80 @@ of this size cannot be distinguished from chance.
 - Every C repair is backed by a recorded hypothesis, prediction and observation; A's repairs have only
   the model's imagined trace. That auditability is C's clearest advantage in this experiment.
 
+## Variant L: localize with breakpoints instead of decomposing
+
+Suggested by the instructor to cut token cost. MGDebugger spends about 80% of its tokens finding the
+bug: decomposing the program (12-13%) and writing tests for every subfunction (66-67%). L drops both.
+The LLM sees the numbered program and the failing test and places 1-3 breakpoints, each a line, an
+expression, and the values the correct program would show there. The sandbox runs the test and
+records the real values; the first mismatch localizes the bug, and the LLM rewrites that function.
+Same model, harness, seeds, 2 outer attempts, up to 3 rounds per attempt. Reports: `al_humanevalfix.md`,
+`cl_humanevalfix.md`.
+
+### Result: 6x cheaper, 12 points fewer repairs
+
+| | A | C | L |
+| --- | --- | --- | --- |
+| Repaired, public-selection | 143 / 148 | 147 / 151 | 129 / 151 |
+| Paired with L (only that variant / only L) | 22 / 5, p = 0.002 | 22 / 4, p = 0.001 | |
+| Cost per repair | $0.0102 | $0.0105 | $0.0019 |
+| Where the money goes | derive tests 66%, debug 22%, decompose 12% | derive tests 67%, hypotheses 15%, decompose 13%, fix 6% | breakpoints 82%, fix 18% |
+| Wall time (4 shards) | about 1 h | about 55 min | about 12 min |
+
+### Why L misses: bugs inside a `return` expression
+
+Breakpoints record state **before** a line runs. When the planted bug is inside the final `return`
+expression, every value the program computes before it is correct, so no breakpoint can disagree.
+The model then tends to write the *correct* computation as the breakpoint expression, which of course
+matches. Examples from the run:
+
+- HumanEval/4 returns `sum(abs(x - mean) for x in numbers) / mean` (should divide by `len(numbers)`).
+  The model's breakpoints: `sum(abs(x - mean) ...)` = 4.0, `len(numbers)` = 4,
+  `sum(...) / len(numbers)` = 1.0, `mean` = 2.5. All matched, so no fix was attempted.
+- HumanEval/54 returns `s0 == s1` (should compare sets). The model checked `set(s0) == set(s1)`, the fixed
+  expression, three times.
+
+Splitting the problems by where the bug is (paired across all three runs, 148 problems):
+
+| Bug location | Problems | A | C | L |
+| --- | --- | --- | --- | --- |
+| Inside a `return` statement | 66 | 65 | 64 | 46 (70%) |
+| Anywhere else | 82 | 78 | 80 | 80 (98%) |
+
+20 of L's 22 failures are `return` bugs. Where a breakpoint can see the bug, L repairs 80 of 82, as
+many as C and more than A, at one sixth of the cost.
+
+### What the breakpoint loop did
+
+| Measure | Value |
+| --- | --- |
+| Attempts (one per outer attempt) | 186 |
+| Outcomes | fixed 132, every breakpoint matched 52, fix failed 2 |
+| Rounds | 333: diverged 135, matched everywhere 188, invalid 5, no data 5 |
+| Fix passed the public tests, when a divergence was found | 132 of 135 (98%) |
+| Breakpoints per round | 1.2 |
+| Rounds per returned fix | 1.30 |
+
+- When L finds a divergence, the fix almost always works (98%). The weak step is localization, not repair.
+- Failed problems are also L's most expensive: 37% of its spend goes to the 22 problems it never
+  repairs, three matched rounds per attempt.
+
+### Two changes that target exactly this failure (not yet run)
+
+1. **Observe, don't recompute.** Require each breakpoint expression to be a variable or a piece of the
+   program's own code at that line. In HumanEval/4 the model could then only ask for `... / mean`, see
+   2.5 where it expected 1.0, and the bug is found.
+2. **A full match is evidence too.** When every breakpoint matches but the output is wrong, the bug is
+   after the last breakpoint. Attempt a fix on those lines instead of giving up.
+
 ## Caveats
 
 - One model (Haiku 5.5), one run per variant, temperature 1.0: run-to-run variation is not measured.
+- The L run was interrupted after 121 problems (a buggy program left running by MGDebugger's
+  in-process test runner exhausted memory) and resumed for the remaining 30. Test scripts now run in a
+  child process under the fixed harness; on all 328 buggy and canonical HumanEvalFix programs that gives
+  the same verdict as before, except 2 where the old runner hung or crashed.
+- "Inside a `return` statement" is found by diffing each buggy program against the canonical one.
 - A lost 3 problems (HumanEval/16, /34, /58) to a harness crash that only affects A: functions that
   return a set could not be written into A's debug prompt. Fixed after the run (`utils.evaluate`);
   the comparison uses the 148 problems both runs completed. Giving all 3 to either side would not

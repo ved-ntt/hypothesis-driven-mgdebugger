@@ -3,7 +3,8 @@
 #
 #   scripts/run_experiment.sh <backend> <dataset> <variant> [shards] [max_problems_per_shard]
 #     backend: claude | mistral | vllm | ollama | openai | mock      (scripts/backend_env.sh)
-#     dataset: humanevalfix | humaneval   (cleaned seeds in data/clean/, made by scripts/clean_data.py)
+#     dataset: humanevalfix | humaneval | humaneval_starcoder | mbpp_deepseekcoder
+#              (cleaned seeds in data/clean/<dataset>.jsonl, made by scripts/clean_data.py)
 #     variant: A (MGDebugger's simulated trace) | C (hypothesis loop) | L (breakpoint localization, no decomposition)
 #              | L2 (L with observe-only breakpoints and a fix after a full match)
 #     shards:  parallel processes (default 4)
@@ -23,11 +24,11 @@ SHARDS=${4:-4}; MAX=${5:-}
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 
 case "$DATASET" in
-  humanevalfix) SEEDS="$HERE/data/clean/humanevalfix.jsonl" ;;
-  humaneval)    SEEDS="$HERE/data/clean/humaneval_deepseekcoder.jsonl" ;;
-  *) echo "unknown dataset $DATASET (humanevalfix | humaneval)"; exit 1 ;;
+  humaneval) SEEDS="$HERE/data/clean/humaneval_deepseekcoder.jsonl" ;;
+  *)         SEEDS="$HERE/data/clean/$DATASET.jsonl" ;;   # humanevalfix, humaneval_starcoder, mbpp_deepseekcoder, ...
 esac
 [ -f "$SEEDS" ] || python3 "$HERE/scripts/clean_data.py"
+[ -f "$SEEDS" ] || { echo "unknown dataset $DATASET (no $SEEDS; see scripts/clean_data.py)"; exit 1; }
 
 source "$HERE/scripts/backend_env.sh"
 export HDMG_VARIANT="$VARIANT"

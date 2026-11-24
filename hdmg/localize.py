@@ -22,6 +22,10 @@ write any expression, wrote the correct formula and saw it match.
     an element, a slice, its length) or a piece of the program's own code on that line, copied.
   - A full match is evidence too: when every round matched and nothing was fixed, one more fix call
     gets all the matched values ("correct up to here") and rewrites the entry function.
+  - Partial progress is kept: a fix that makes more public tests pass without breaking any that
+    passed becomes the program for the next round, localized again on the first test still failing
+    (one extra round per accepted step, at most 2k rounds). A program with several bugs can then be
+    repaired one bug at a time; L throws such a fix away because the other bug still fails a test.
 
 The localization is real execution, not the LLM's simulation: the LLM predicts what SHOULD
 happen and the sandbox says what DID happen, the same contract as variant C's hypotheses, but on
@@ -76,7 +80,7 @@ class LRound:
 
 @dataclass
 class LResult:
-    status: str                          # already_passing | fixed | fixed_fallback | fix_failed | no_divergence
+    status: str                          # already_passing | fixed | fixed_fallback | partial | fix_failed | no_divergence
     fixed_program: Optional[str] = None
     rounds: list = field(default_factory=list)
 
@@ -316,14 +320,14 @@ LOCALIZE_SYSTEM_OBSERVE = (
     "OBSERVE THE PROGRAM, DON'T RECOMPUTE IT. An expression must be either\n"
     "  (a) a value the program holds: a variable, an element or slice (`xs[i]`, `s[i:]`), an attribute, or "
     "len/sorted/... of those; or\n"
-    "  (b) a piece of the program's own code on that line, copied exactly (e.g. on `return total / count` "
-    "you may use `total / count`, `total` or `count`).\n"
+    "  (b) a piece of the program's own code on that line, copied exactly (on `return a * k + b` you may use "
+    "`a * k + b`, `a * k`, `a` or `k`).\n"
     "Your own formula is rejected: it would test your formula, not the program.\n"
     "Rules:\n"
     "- Line numbers refer to the numbered listing. Use a line where a statement inside a function starts.\n"
-    "- The bug is often in the last line that runs, e.g. inside the returned expression. Values computed "
-    "before it can all be correct; to check that line, break ON it and copy the returned expression or its "
-    "parts.\n"
+    "- A breakpoint shows the state before its line runs, so it cannot show what that line itself computes. "
+    "To check a line's own computation, break ON that line and copy its expressions (on `y = f(a) + b`, "
+    "copy `f(a) + b` or `f(a)`).\n"
     "- A loop header, or a line inside a loop, is hit once per iteration; a line in a recursive function "
     "is hit in every call. A variable assigned ON the line still has its old value there.\n"
     "- 1 to " + str(MAX_BREAKPOINTS) + " breakpoints, each with 1 to " + str(MAX_EXPECT) + " expected values "
@@ -331,7 +335,7 @@ LOCALIZE_SYSTEM_OBSERVE = (
     "you list, only the values you list are checked.\n"
     "- Don't reuse breakpoints from earlier rounds; if earlier ones matched, the bug comes after them.\n"
     "Reply with one ```json block, nothing else:\n"
-    '{"breakpoints": [{"line": 7, "expr": "total / count", "expect": [2.5]}], "why": "one sentence"}'
+    '{"breakpoints": [{"line": 12, "expr": "acc", "expect": [0, 3]}], "why": "one sentence"}'
 )
 
 FIX_SYSTEM_L = ("You fix Python programs. The breakpoint evidence shows where the program first differs "
@@ -544,6 +548,7 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
     focus_index = next(i for i, (passed, _) in enumerate(baseline) if not passed)
     focus, actual = tests[focus_index], baseline[focus_index][1]
     call = call_expr_from_input(entry_point, focus["input"])
+    start_program = program
     lines = breakpoint_lines(program)
     code = line_code(program) if observe else None
     matched: list[dict] = []   # breakpoints of rounds where everything matched (observe mode fallback)
@@ -552,7 +557,10 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
     tried: set = set()
     any_diverged = False
 
-    for n in range(1, k + 1):
+    budget = k
+    n = 0
+    while n < budget:
+        n += 1
         bps, errors = ask_breakpoints(llm, program, call, focus["expected_output"], actual, memory, lines, tried,
                                       code)
         if bps is None:
@@ -587,6 +595,7 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
         any_diverged = True
         rnd.verdict, rnd.divergence = "diverged", div
         new_program, fn = ask_fix(llm, program, call, focus["expected_output"], actual, div, annotated)
+        progressed = False
         rnd.fix_function = fn
         where = f"diverged at line {div['line']} ({div['function']}): `{div['expr']}` expected {_short(div['expected'], 60)} got {_short(div['actual'], 60)}"
         if new_program is None:
@@ -598,11 +607,29 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
                 return LResult(status="fixed", fixed_program=new_program, rounds=rounds)
             failures = [f"[{i}] got {_short(got, 80)}" for i, (passed, got) in enumerate(results) if not passed]
             rnd.outcome = f"rewrote {fn}, tests still fail: " + "; ".join(failures[:3])
-        memory.append(f"Round {n}: {summary} | {where} | {rnd.outcome}")
+            before = {i for i, (passed, _) in enumerate(baseline) if passed}
+            after = {i for i, (passed, _) in enumerate(results) if passed}
+            if observe and before < after and budget < 2 * k:
+                # one bug fixed, another remains: continue from the improved program
+                progressed = True
+                rnd.outcome = (f"rewrote {fn}: {len(after)} of {len(tests)} public tests pass (was {len(before)}); "
+                               f"kept, localizing the next failing test")
+                program, baseline = new_program, results
+                focus_index = next(i for i, (passed, _) in enumerate(baseline) if not passed)
+                focus, actual = tests[focus_index], baseline[focus_index][1]
+                call = call_expr_from_input(entry_point, focus["input"])
+                lines, code = breakpoint_lines(program), line_code(program)
+                tried, matched, any_diverged = set(), [], False
+                budget += 1
+        if progressed:
+            memory = [f"Round {n}: {where} | {rnd.outcome}. Line numbers below refer to the updated program."]
+        else:
+            memory.append(f"Round {n}: {summary} | {where} | {rnd.outcome}")
 
+    progressed_any = program != start_program
     if observe and not any_diverged and matched:
         new_program = ask_fallback_fix(llm, program, call, focus["expected_output"], actual, entry_point, matched)
-        rnd = LRound(k + 1, verdict="fallback", fix_function=entry_point)
+        rnd = LRound(n + 1, verdict="fallback", fix_function=entry_point)
         rounds.append(rnd)
         if new_program is None:
             rnd.outcome = "the fallback fix reply had no usable ```python block"
@@ -613,6 +640,9 @@ def localize_and_fix(program: str, entry_point: str, tests: list[dict], llm: LLM
                 return LResult(status="fixed_fallback", fixed_program=new_program, rounds=rounds)
             failures = [f"[{i}] got {_short(got, 80)}" for i, (passed, got) in enumerate(results) if not passed]
             rnd.outcome = "fallback fix failed: " + "; ".join(failures[:3])
+    if progressed_any:
+        # more public tests pass than before, not all: hand back the improved program
+        return LResult(status="partial", fixed_program=program, rounds=rounds)
     return LResult(status="fix_failed" if any_diverged else "no_divergence", rounds=rounds)
 
 
@@ -672,7 +702,8 @@ def debug_program(buggy_code: str, entry_point: str, gold_tests: list, *,
             status = "error"
             record["error"] = f"{type(e).__name__}: {e}"
 
-    fixed = result.fixed_program if result is not None and status in ("fixed", "fixed_fallback") else None
+    fixed = (result.fixed_program if result is not None and status in ("fixed", "fixed_fallback", "partial")
+             else None)
     if log_path:
         record.update(status=status, returned_fix=fixed is not None, seconds=round(time.time() - t0, 2),
                       rounds=[asdict(r) for r in result.rounds] if result is not None else [])

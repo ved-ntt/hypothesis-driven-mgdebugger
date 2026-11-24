@@ -37,9 +37,10 @@ def main(run_dir):
     n_buggy = n_total - n_solved_before
     # [cleaned seeds] undetectable bugs are skipped by the run, so they are not part of its RSR
     if params.get("ONLY_DETECTABLE") and any("detectable" in s for s in seeds):
-        n_undetectable = sum(1 for s in seeds if not s["is_solved"] and s.get("detectable") is False)
+        n_undetectable = sum(1 for s in seeds if not s["is_solved"]
+                             and s.get("usable", s.get("detectable")) is False)
         n_buggy -= n_undetectable
-        print(f"(cleaned seeds: {n_undetectable} undetectable bugs excluded)")
+        print(f"(cleaned seeds: {n_undetectable} undetectable or unusable bugs excluded)")
 
     res_files = [f for f in glob.glob(os.path.join(run_dir, "*_debugging_seeds_from_*.jsonl"))]
     problems = [json.loads(l) for l in open(res_files[0])]
@@ -72,7 +73,8 @@ def main(run_dir):
     dataset = next((d for d in ["humanevalfix", "humaneval", "mbpp"] if any(p.startswith(d) for p in parts)), "?")
     seed_model = parts[-2]
     if parts[-2] == "clean":
-        seed_model = next((m for m in ["deepseekcoder", "codeqwen", "codestral"] if m in parts[-1]), "?")
+        seed_model = next((m for m in ["deepseekcoder", "codeqwen", "codestral", "starcoder2", "starcoder",
+                                       "codellama"] if m in parts[-1]), "?")
     if dataset == "humanevalfix":  # buggy code is human-written; key the paper row by the debugging model
         m = params["MODEL"].lower()
         seed_model = next((k for k, pat in [("deepseekcoder", "deepseek"), ("codeqwen", "codeqwen"),

@@ -109,6 +109,11 @@ def parse_public_tests(asserts: list[str], entry_point: str, program: str) -> tu
     parsed, skipped = [], []
     for text in asserts:
         case, reason = parse_assert(text, entry_point, params, program)
+        if case is not None:
+            try:  # the seeds are JSON; a complex number or an object can't be stored as a test case
+                json.dumps(case, allow_nan=False)
+            except (TypeError, ValueError) as e:
+                case, reason = None, f"a value is not JSON ({e})"
         if case is None:
             skipped.append({"assert": text, "reason": reason})
         else:

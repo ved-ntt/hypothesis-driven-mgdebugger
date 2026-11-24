@@ -150,14 +150,23 @@ python3 scripts/compare_runs.py MGDebugger/src/output_data/experiments/humaneval
 
 **Variant L2** (`HDMG_VARIANT=L2`) targets L's main miss, a bug inside a `return` expression, where every
 value before the line is correct and the model, free to write any expression, wrote the correct formula and
-saw it match. Two changes: (1) observe, don't recompute: an expression must be a value the program holds
+saw it match. Three changes: (1) observe, don't recompute: an expression must be a value the program holds
 (variable, element, slice, `len` of it) or a piece of the program's own code on that line, copied; (2) when
-every round matched, one more fix call gets the matched values as evidence that the bug comes after them.
+every round matched, one more fix call gets the matched values as evidence that the bug comes after them;
+(3) a fix that makes more public tests pass without breaking any is kept, and the next round localizes the
+next failing test, so a program with several bugs can be repaired one at a time.
 In L's run, 116 of the 217 breakpoints in fully matched rounds were the model's own formulas, which L2 rejects
 (versus 24 of 176 in rounds that found the bug).
 
 ```
 HDMG_RUN_BUDGET_USD=2 bash scripts/run_experiment.sh claude humanevalfix L2 4
+```
+
+L2 is also checked on bug sets that played no part in its design (HumanEval with DeepSeek and StarCoder
+seeds, MBPP with DeepSeek seeds); the plan, written before those runs, is `results/heldout_plan.md`:
+
+```
+bash scripts/run_heldout.sh        # about 1.5 h, about $4; safe to run again if interrupted
 ```
 
 If a run is cut off (closed terminal, crash), resume it: only the problems no shard finished are run again.

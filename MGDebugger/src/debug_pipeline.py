@@ -35,12 +35,13 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
     for i in range(len(seeds)):
         problem = json.loads(seeds[i])
         if not problem["is_solved"]:
-            if config.ONLY_DETECTABLE and problem.get("detectable") is False:  # [hdmg] cleaned seeds only
+            # [hdmg] cleaned seeds only: "usable" = detectable, has a parsed given test, reference passes it
+            if config.ONLY_DETECTABLE and problem.get("usable", problem.get("detectable")) is False:
                 skipped_undetectable += 1
                 continue
             unsolved_seeds.append(problem)
     if skipped_undetectable:
-        logger.info(f"Skipped {skipped_undetectable} undetectable problems (buggy code passes every given test)")
+        logger.info(f"Skipped {skipped_undetectable} problems that are undetectable or not usable")
     if config.SHARD:  # [hdmg] main.py --shard i/N: every N-th problem, starting at i
         index, count = config.SHARD
         unsolved_seeds = unsolved_seeds[index::count]

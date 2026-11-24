@@ -5,7 +5,8 @@
 Reads the original seeds named in the shards' params.json, drops every problem some shard of the
 run already finished (a results row with attempts), and writes the rest to <run>/resume_<time>/clean/
 <name>.jsonl (the "clean" folder keeps the results file name the same as the original shards').
-Prints that path, or nothing if every problem is done. A problem a shard was in the middle of
+Prints that path, or nothing if every problem is done. With --check it writes nothing and prints
+only whether problems are left. A problem a shard was in the middle of
 when it was killed has no attempts, so it runs again; merge_runs.py drops its partial log lines.
 """
 import glob
@@ -25,15 +26,17 @@ def finished(run: str) -> set:
     return done
 
 
-def main(run: str) -> None:
+def main(run: str, check: bool = False) -> None:
     params_files = sorted(glob.glob(os.path.join(run, "shard*", "params.json")))
     if not params_files:
         sys.exit(f"no shard folders in {run}")
     seeds_path = json.load(open(params_files[0]))["input_seeds"]
     done = finished(run)
     rest = [l for l in open(seeds_path) if json.loads(l)["task_id"] not in done]
-    todo = [l for l in rest if not json.loads(l)["is_solved"] and json.loads(l).get("detectable") is not False]
-    if not todo:
+    todo = [l for l in rest if not json.loads(l)["is_solved"] and json.loads(l).get("usable", json.loads(l).get("detectable")) is not False]
+    if not todo or check:
+        if todo:
+            print(f"{len(todo)} to go")  # --check: print something only if the run is unfinished
         return
     out_dir = os.path.join(run, f"resume_{time.strftime('%H%M%S')}", "clean")
     os.makedirs(out_dir, exist_ok=True)
@@ -45,4 +48,4 @@ def main(run: str) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], check="--check" in sys.argv[2:])

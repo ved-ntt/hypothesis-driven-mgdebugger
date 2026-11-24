@@ -310,3 +310,28 @@ def test_no_fallback_in_plain_l():
     match = {"breakpoints": [{"line": 3, "expr": "mean", "expect": [2.5]}]}
     r = lz.localize_and_fix(MAD, "mad", MAD_TESTS, ScriptedLLM([J(match)]), k=1)
     assert r.status == "no_divergence" and len(r.rounds) == 1
+
+
+TWO_BUGS = 'def f(x, mode):\n    if mode == "a":\n        return x + 2\n    return x * 3\n'
+TWO_TESTS = [{"input": {"x": 1, "mode": "a"}, "expected_output": 2},
+             {"input": {"x": 1, "mode": "b"}, "expected_output": 2}]
+FIX_A = '```python\ndef f(x, mode):\n    if mode == "a":\n        return x + 1\n    return x * 3\n```'
+FIX_AB = '```python\ndef f(x, mode):\n    if mode == "a":\n        return x + 1\n    return x * 2\n```'
+
+
+def test_l2_keeps_partial_progress_on_two_bugs():
+    llm = ScriptedLLM([J({"breakpoints": [{"line": 3, "expr": "x + 2", "expect": [2]}]}), FIX_A,
+                       J({"breakpoints": [{"line": 4, "expr": "x * 3", "expect": [2]}]}), FIX_AB])
+    r = lz.localize_and_fix(TWO_BUGS, "f", TWO_TESTS, llm, k=1, observe=True)
+    assert r.status == "fixed" and "x * 2" in r.fixed_program
+    assert "1 of 2 public tests pass (was 0)" in r.rounds[0].outcome
+    assert "mode='b'" in llm.prompt(2) and "updated program" in llm.prompt(2)
+
+
+def test_l2_returns_partial_program_and_plain_l_discards_it():
+    script = [J({"breakpoints": [{"line": 3, "expr": "x + 2", "expect": [2]}]}), FIX_A,
+              J({"breakpoints": [{"line": 4, "expr": "x", "expect": [1]}]}), FIX_A]   # matched; fallback fails
+    r = lz.localize_and_fix(TWO_BUGS, "f", TWO_TESTS, ScriptedLLM(list(script)), k=1, observe=True)
+    assert r.status == "partial" and "x + 1" in r.fixed_program
+    r = lz.localize_and_fix(TWO_BUGS, "f", TWO_TESTS, ScriptedLLM(script[:2]), k=1)
+    assert r.status == "fix_failed" and r.fixed_program is None

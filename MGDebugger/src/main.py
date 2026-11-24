@@ -105,3 +105,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # [hdmg] results are written; don't wait for test threads that timed out and are still running
+    sys.stdout.flush(); sys.stderr.flush()
+    os._exit(0)

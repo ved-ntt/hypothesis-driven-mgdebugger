@@ -1,4 +1,4 @@
-# A vs C vs L on HumanEvalFix: findings
+# A vs C vs L vs L2 on HumanEvalFix: findings
 
 Run on 23 Nov 2026 with Claude Haiku 5.5 (temperature 1.0, the endpoint's minimum), 151 detectable
 HumanEvalFix bugs, 2 outer attempts, fixed harness, 4 parallel shards per variant. Full report:
@@ -6,18 +6,24 @@ HumanEvalFix bugs, 2 outer attempts, fixed harness, 4 parallel shards per varian
 
 ## Summary
 
-| | A: simulated trace | C: hypothesis loop | L: breakpoint localization |
-| --- | --- | --- | --- |
-| Repaired, public-selection (problems the run completed) | 143 / 148 (96.6%) | 147 / 151 (97.4%) | 129 / 151 (85.4%) |
-| Cost per problem | $0.0099 | $0.0102 | $0.0016 |
-| Cost per repair | $0.0102 | $0.0105 | $0.0019 |
-| Tokens per problem | 28,760 | 33,035 | 5,866 |
-| LLM calls per problem | 10.8 | 13.6 | 3.5 |
+| | A: simulated trace | C: hypothesis loop | L: breakpoints | **L2: observe-only breakpoints** |
+| --- | --- | --- | --- | --- |
+| Repaired, public-selection (problems the run completed) | 143 / 148 (96.6%) | 147 / 151 (97.4%) | 129 / 151 (85.4%) | **149 / 151 (98.7%)**; replicate 150 / 151 |
+| Cost per problem | $0.0099 | $0.0102 | $0.0016 | **$0.0010** |
+| Cost per repair | $0.0102 | $0.0105 | $0.0019 | **$0.0010** |
+| Tokens per problem | 28,760 | 33,035 | 5,866 | 3,573 |
+| LLM calls per problem | 10.8 | 13.6 | 3.5 | 2.3 |
+| Wall time (4 shards) | about 1 h | about 55 min | about 12 min | about 6 min |
 
+- **L2 repairs at least as many bugs as MGDebugger at one tenth of the cost.** On the 148 problems both
+  completed: A 143, L2 146 (replicate 147); only A repaired 2 (1), only L2 repaired 5. The accuracy gain
+  is not statistically significant (McNemar p = 0.45; replicate p = 0.22); the 9.6x cost reduction is
+  the robust result, and L2 is at least as accurate.
 - A and C: no measurable difference (below).
-- L costs one sixth as much and repairs fewer bugs (paired against A: p = 0.002; against C: p = 0.001).
-  The whole gap comes from one kind of bug, a mistake inside a `return` expression; on every other
-  bug L repairs as many as C (section "Variant L" below).
+- L, the first breakpoint version, was 6x cheaper but repaired fewer bugs (p = 0.002 against A): it
+  missed bugs inside a `return` expression. L2 fixes exactly that (L 46 / 66 of those bugs, L2 65 / 66).
+- Every recorded hidden-test verdict of all five runs (808 attempts) was re-checked by running the
+  attempt's code against the hidden tests in a fresh process: no disagreement.
 
 ## A vs C: no measurable difference in repairs
 
@@ -125,17 +131,78 @@ many as C and more than A, at one sixth of the cost.
 - Failed problems are also L's most expensive: 37% of its spend goes to the 22 problems it never
   repairs, three matched rounds per attempt.
 
-### Two changes that target exactly this failure (not yet run)
+## Variant L2: observe the program, don't recompute it
 
-1. **Observe, don't recompute.** Require each breakpoint expression to be a variable or a piece of the
-   program's own code at that line. In HumanEval/4 the model could then only ask for `... / mean`, see
-   2.5 where it expected 1.0, and the bug is found.
-2. **A full match is evidence too.** When every breakpoint matches but the output is wrong, the bug is
-   after the last breakpoint. Attempt a fix on those lines instead of giving up.
+Two changes to L, aimed at the failure above:
+
+1. **Observe, don't recompute.** A breakpoint expression must be a value the program holds (a variable,
+   an element or slice, an attribute, `len` of one) or a piece of the program's own code on that line,
+   copied. Anything else is rejected with a list of the pieces of that line it may use. In HumanEval/4
+   the model can no longer ask for `sum(...) / len(numbers)`; it must ask for the program's
+   `sum(...) / mean`, which is 1.6 where 1.0 is expected, so the bug is found on the first round.
+   Copied code may call what the program calls (its own helpers, `hashlib.md5`), but not methods that
+   change state (`append`, `pop`, ...).
+2. **A full match is evidence too.** If every round matched and nothing was fixed, one more fix call
+   gets the matched values ("the program is right up to here, so the bug comes after").
+
+Run twice (same settings), reports `al2_humanevalfix.md` (A vs L2), `cl2_humanevalfix.md`,
+`ll2_humanevalfix.md` (L vs L2), `al2_humanevalfix_run2.md`, `l2_replicate_humanevalfix.md`.
+
+### Result
+
+| | A | L2 run 1 | L2 run 2 |
+| --- | --- | --- | --- |
+| Repaired, public-selection (148 paired problems) | 143 | 146 | 147 |
+| Only A / only L2 | | 2 / 5, p = 0.45 | 1 / 5, p = 0.22 |
+| Repaired, of all 151 | | 149 | 150 |
+| Cost per repair | $0.0102 | $0.0010 | $0.0011 |
+| Where the money goes | derive tests 66%, debug 22%, decompose 12% | breakpoints 69%, fix 31% | |
+
+The two L2 runs agree on 150 of 151 problems. HumanEval/123 fails in both (and in L and C): its buggy
+`get_odd_collatz` loops forever on the failing input, so no breakpoint value comes back before the timeout.
+
+By bug location (148 problems, all runs):
+
+| Bug location | Problems | A | C | L | L2 run 1 | L2 run 2 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Inside a `return` statement | 66 | 65 | 64 | 46 | 65 | 66 |
+| Anywhere else | 82 | 78 | 80 | 80 | 81 | 81 |
+
+### What the breakpoint loop did (run 1)
+
+| Measure | Value |
+| --- | --- |
+| Attempts | 150 (one outer attempt was enough for 149 of 151 problems) |
+| Outcomes | fixed after a divergence 146, fixed after a full match 2, nothing found 2 |
+| First round found a divergence | 126 of 153 attempts (82%) |
+| Rounds | 188: diverged 146, matched everywhere 33, invalid 2, no data 5 |
+| Fix passed the public tests, when a divergence was found | 146 of 146 |
+| Breakpoints per round | 1.03 |
+
+- The observe rule does nearly all of the work: the fallback fix after a full match added 2 repairs in
+  run 1 and 4 in run 2. Without it L2 would still repair 147 and 146.
+- Once a divergence is found, the fix passed every time. Localizing on real values gives the fix step
+  precise evidence ("`x` should be 1.0 but was 1.6 at line 13"), and that is all it needs.
+- Cost drops further than L's because the first round usually finds the bug: 2.3 LLM calls per
+  problem against L's 3.5 and A's 10.8.
+
+### Why this beats MGDebugger on cost without losing accuracy
+
+MGDebugger localizes by restructuring: decompose the program into subfunctions, have the LLM write tests
+for each one, test them bottom-up. About 80% of its tokens go there, and its debug step then simulates
+execution in the LLM. L2 localizes by measurement: one LLM call names a few values that must hold, one
+real run checks them, and the first wrong one is the bug. On short single-bug programs like HumanEvalFix
+that is enough; whether it holds on longer programs with several interacting bugs, where MGDebugger's
+hierarchy is meant to help, is not tested here.
 
 ## Caveats
 
-- One model (Haiku 5.5), one run per variant, temperature 1.0: run-to-run variation is not measured.
+- One model (Haiku 5.5), temperature 1.0. A, C and L ran once; L2 ran twice (149 and 150 repaired,
+  agreeing on 150 of 151 problems), so L2's run-to-run variation is small, but A's and C's is unmeasured.
+- A and C graded test scripts in MGDebugger's in-process runner; L and L2 (partly) in a child process.
+  Re-running every recorded attempt of all five runs in a child process reproduced every verdict.
+- L2 was designed after seeing L's failures on this same benchmark. The rule it adds is general (observe
+  program state, don't recompute it), but a confirmation on another benchmark would be stronger.
 - The L run was interrupted after 121 problems (a buggy program left running by MGDebugger's
   in-process test runner exhausted memory) and resumed for the remaining 30. Test scripts now run in a
   child process under the fixed harness; on all 328 buggy and canonical HumanEvalFix programs that gives

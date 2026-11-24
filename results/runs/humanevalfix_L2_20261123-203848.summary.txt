@@ -1,0 +1,20 @@
+(cleaned seeds: 13 undetectable bugs excluded)
+Run: output_data/experiments/humanevalfix_L2_20261123-203848
+Variant: L2  k=3  sandbox timeout=5.0 s
+Model: claude-haiku-5-5  stop_on=both  T=None  min_p=False  outer=2
+Dataset: humanevalfix  seeds from: claude-haiku-5-5  problems: 164  buggy: 151  debugged so far: 151
+
+                               fixed    RSR %    acc %  tokens/problem
+hidden-selection (paper)         150     99.3     91.5            3683
+public-selection                 150     99.3     91.5            3683
+
+LLM calls: 360 ok, 0 failed;  per problem: 2.4
+  fix            calls    151   tokens     154793   per problem    1.0 calls,     1025 tok
+  localize       calls    209   tokens     401391   per problem    1.4 calls,     2658 tok
+Localize loop: 152 attempts  {'fixed': 146, 'fixed_fallback': 4, 'no_divergence': 2}
+  rounds 195  {'diverged': 147, 'no_divergence': 35, 'fallback': 4, 'invalid': 3, 'no_data': 6}
+  breakpoints placed 193 (1.0 per round);  attempts that returned a fix: 150
+Spend: $0.158 total, $0.0010 per problem
+Attempts passing public but failing hidden tests (overfit): 0
+Hidden-selection fixes whose winning attempt made no debug call: 0 of 150
+First attempt that passed hidden tests: {1: 150, None: 1}

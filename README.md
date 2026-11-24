@@ -2,8 +2,9 @@
 
 CSC 591 project. Keeps MGDebugger's hierarchical recursion (Shi et al., ICSE '26) and replaces
 its LLM-simulated execution with a hypothesis -> prediction -> real observation loop (variant C).
-Variant L drops the decomposition entirely and localizes the bug with breakpoints on real execution,
-to cut the token cost.
+Variants L and L2 drop the decomposition entirely and localize the bug with breakpoints on real
+execution. On HumanEvalFix with Claude Haiku 5.5, L2 repairs 98.7% of detectable bugs (MGDebugger:
+96.6%) at one tenth of MGDebugger's token cost.
 
 ## Layout
 
@@ -173,6 +174,9 @@ breakpoints, the real hits, the divergence and the fix outcome); its LLM calls a
 - Data cleaning: `results/data_cleaning.md`
 - Hypothesis loop, MGDebugger integration, live demo: done (variant C)
 - Harness fixes, parallel runner, A vs C comparison: done
+- **Variant L2 (observe-only breakpoints): as accurate as MGDebugger at one tenth of the cost.** 149 of 151
+  repaired (replicate: 150), $0.0010 per repair vs A's $0.0102; on the 148 paired problems A 143, L2 146
+  (p = 0.45, replicate 147, p = 0.22). See `results/experiment_findings.md` and `results/al2_humanevalfix.md`.
 - **Variant L (breakpoint localization, no decomposition): 6x cheaper, 85% vs 97% repaired.** $0.0019 per
   repair vs A's $0.0102; 129 of 151 repaired. 20 of its 22 misses are bugs inside a `return` expression,
   which a breakpoint taken before the line cannot see; on all other bugs it repairs 80 of 82, as many as C.

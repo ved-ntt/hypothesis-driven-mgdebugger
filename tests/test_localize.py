@@ -237,3 +237,15 @@ def test_debug_program_logs_and_tags_stages(tmp_path):
 def test_debug_program_returns_input_when_not_fixed():
     llm = ScriptedLLM([J(MATCHING)])
     assert lz.debug_program(PAL, "find_longest_suffix", PAL_TESTS, llm=llm, k=1) == PAL
+
+
+# ----- pipeline test scripts in a child process (fixed harness)
+
+def test_run_script_verdicts_and_runaway_program_is_killed():
+    from sandbox import run_script
+    assert run_script("def f(x):\n    return x\nassert f(1) == 1\n") == (True, "")
+    ok, reason = run_script("assert 1 == 2, 'nope'\n")
+    assert not ok and reason.startswith("AssertionError")
+    # an infinite loop that allocates: killed by the timeout or the memory cap, never left running
+    ok, reason = run_script("xs = []\nwhile True:\n    xs.append([0] * 1000)\n", timeout=3, mem_mb=200)
+    assert not ok and ("MemoryError" in reason or "timeout" in reason)

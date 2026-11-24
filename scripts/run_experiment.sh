@@ -12,6 +12,10 @@
 # HDMG_HARNESS=fixed); outer attempts default to 2 (HDMG_MAX_OUTER_RETRY).
 # Output: MGDebugger/src/output_data/experiments/<dataset>_<variant>_<timestamp>/ with one folder
 # per shard, merged logs at the top, and summary.txt. Compare two runs with scripts/compare_runs.py.
+#
+# Resume an interrupted run (same backend, dataset and variant): only the problems no shard finished
+# are run, in new shard folders of the same run, then everything is merged again.
+#   HDMG_RESUME=MGDebugger/src/output_data/experiments/<run> scripts/run_experiment.sh claude humanevalfix L 4
 set -euo pipefail
 BACKEND=${1:?backend}; DATASET=${2:?dataset}; VARIANT=${3:?variant A, C or L}
 SHARDS=${4:-4}; MAX=${5:-}
@@ -31,16 +35,28 @@ export HDMG_STOP_ON=${HDMG_STOP_ON:-both} HDMG_MAX_OUTER_RETRY=${HDMG_MAX_OUTER_
 RUN_BUDGET=${HDMG_RUN_BUDGET_USD:-5}
 export HDMG_BUDGET_USD=$(python3 -c "print(round($RUN_BUDGET / $SHARDS, 4))")
 
+RESUME_TAG=""
+if [ -n "${HDMG_RESUME:-}" ]; then
+  RESUME_DIR="$(cd "$HDMG_RESUME" && pwd)"
+  SEEDS="$(python3 "$HERE/scripts/resume_seeds.py" "$RESUME_DIR")"
+  if [ -z "$SEEDS" ]; then echo "nothing left to run in $RESUME_DIR"; exit 0; fi
+  RESUME_TAG="_r$(date +%H%M%S)"
+fi
+
 cd "$HERE/MGDebugger/src"
-RUN="output_data/experiments/${DATASET}_${VARIANT}_$(date +%Y%m%d-%H%M%S)"
+if [ -n "$RESUME_TAG" ]; then
+  RUN="$(python3 -c "import os,sys; print(os.path.relpath(sys.argv[1]))" "$RESUME_DIR")"
+else
+  RUN="output_data/experiments/${DATASET}_${VARIANT}_$(date +%Y%m%d-%H%M%S)"
+fi
 mkdir -p "$RUN"
 echo "Run $RUN: backend=$BACKEND model=${HDMG_MODEL:-?} variant=$VARIANT shards=$SHARDS" \
      "budget=\$$RUN_BUDGET (\$$HDMG_BUDGET_USD per shard) outer=$HDMG_MAX_OUTER_RETRY"
 
 PIDS=()
 for ((i = 0; i < SHARDS; i++)); do
-  python3 main.py --seeds "$SEEDS" --shard "$i/$SHARDS" --out "$RUN/shard$i" ${MAX:+--max-examples "$MAX"} \
-    > "$RUN/shard$i.log" 2>&1 &
+  python3 main.py --seeds "$SEEDS" --shard "$i/$SHARDS" --out "$RUN/shard$i$RESUME_TAG" ${MAX:+--max-examples "$MAX"} \
+    > "$RUN/shard$i$RESUME_TAG.log" 2>&1 &
   PIDS+=($!)
 done
 
@@ -48,7 +64,7 @@ done
 while true; do
   alive=0
   for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null && alive=$((alive + 1)); done
-  done_now=$(cat "$RUN"/shard*/all_info.log 2>/dev/null | grep -cE "Successfully fixed problem|Failed to fix problem|Error occurred while processing problem" || true)
+  done_now=$(cat "$RUN"/shard*"$RESUME_TAG"/all_info.log 2>/dev/null | grep -cE "Successfully fixed problem|Failed to fix problem|Error occurred while processing problem" || true)
   echo "$(date +%H:%M:%S)  problems finished: $done_now  shards running: $alive/$SHARDS"
   [ "$alive" -eq 0 ] && break
   sleep 60

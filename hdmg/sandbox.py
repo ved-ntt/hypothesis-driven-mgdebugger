@@ -148,6 +148,46 @@ def run_breakpoints(code, call_expr, breakpoints, timeout=5, mem_mb=512, max_hit
                  "soft_timeout": max(0.5, min(timeout - 1.0, timeout * 0.8))}, timeout)
 
 
+_SCRIPT_CHILD = r'''
+import sys
+if len(sys.argv) > 1 and int(sys.argv[1]):
+    try:
+        import resource
+        lim = int(sys.argv[1]) * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_AS, (lim, lim))
+    except Exception:
+        pass
+code = sys.stdin.read()
+try:
+    exec(compile(code, "<script>", "exec"), {"__name__": "__hdmg__"})
+except AssertionError as e:
+    print("@@HDMG_FAIL@@AssertionError: " + str(e)[:500]); sys.exit(3)
+except MemoryError:
+    print("@@HDMG_FAIL@@MemoryError"); sys.exit(4)
+except BaseException as e:
+    print("@@HDMG_FAIL@@" + type(e).__name__ + ": " + str(e)[:500]); sys.exit(5)
+'''
+
+
+def run_script(code, timeout=10, mem_mb=1024):
+    """Run a whole script (program + asserts) in a child process. Returns (passed, reason).
+
+    Used by MGDebugger's evaluate_simple / evaluate_given_tests under the fixed harness: upstream
+    exec()s the script in a thread of the debugger itself, and a timed-out thread keeps running,
+    so a buggy program with an infinite loop that allocates grows until the OS kills the run."""
+    try:
+        proc = subprocess.run([sys.executable, "-I", "-c", _SCRIPT_CHILD, str(mem_mb)], input=code,
+                              capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, f"timeout after {timeout} s"
+    if proc.returncode == 0:
+        return True, ""
+    for line in reversed(proc.stdout.splitlines()):
+        if line.startswith("@@HDMG_FAIL@@"):
+            return False, line[len("@@HDMG_FAIL@@"):]
+    return False, f"exit code {proc.returncode}: {proc.stderr[-300:]}"
+
+
 def sequences(result, call=0, as_repr=False):
     """{var: [values]} from a run_traced result (first call by default)."""
     out = {}

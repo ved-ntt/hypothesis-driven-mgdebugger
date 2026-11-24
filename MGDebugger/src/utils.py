@@ -129,8 +129,25 @@ def extract_function(code_block, function_name):
     return None
 
 
+def _run_in_child(test_code):
+    """[hdmg] fixed harness: run the test script in a separate process (hdmg/sandbox.run_script), so a
+    program that times out is killed. Upstream exec()s it in a thread of this process, which keeps
+    running after the timeout; one that loops while allocating eventually takes the run down."""
+    import config
+    if config.HARNESS != "fixed":
+        return None
+    from hdmg.sandbox import run_script
+    passed, reason = run_script(test_code, timeout=10)
+    if not passed:
+        logger.error(f"Test script failed: {reason}")
+    return passed
+
+
 def evaluate_given_tests(code, given_tests, max_memory=100 * 1024 * 1024):
     test_code = f"{STARTING_CODE}\n\n{code}\n\n{given_tests}"
+    child = _run_in_child(test_code)  # [hdmg]
+    if child is not None:
+        return child
     try:
         function_with_timeout(exec, (test_code, globals()), timeout=10, max_memory=max_memory)
         return True
@@ -151,6 +168,9 @@ def evaluate_simple(code, entry_point, all_test, max_memory=100 * 1024 * 1024):
     '''
 
     test_code = f"{STARTING_CODE}\n\n{code}\n\n{all_test}\n\ncheck({entry_point})"
+    child = _run_in_child(test_code)  # [hdmg]
+    if child is not None:
+        return child
     try:
         function_with_timeout(exec, (test_code, globals()), timeout=10, max_memory=max_memory)
         return True

@@ -255,7 +255,7 @@ accuracy gain on HumanEvalFix does not.** On held-out bugs L2 is somewhat less a
    fixes on MBPP passed the value check but failed the real assert; on 16 problems L2 never produced a fix
    that passed it. L2 is hit harder than A because it stops at the first fix its check accepts, and its
    prompts showed the expected value as JSON, so `((6, 7), (4, 9))` appeared as `[[6, 7], [4, 9]]`. A has
-   the same lenient check but rewrites the program from the original code each time it decomposes.
+   the same lenient check; how much it cost A is measured by the rerun below.
    HumanEvalFix and HumanEval were not affected (0 such fixes).
 2. **No code to observe (StarCoder, 2 problems).** StarCoder's "solution" to HumanEval/6 and /129 is an
    empty function body (comments only). There is no line to break on, every L2 round is rejected, and no

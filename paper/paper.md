@@ -1,5 +1,5 @@
 ---
-title: "Measure, Don't Imagine: Hypothesis-Driven Bug Localization for LLM Debugging"
+title: "Hypothesis-Driven Debugging of LLM-Generated Code"
 author: |
   Vedantt Koul, Rishabh Ravi Kumar, Arjun Mamidala \
   CSC 591, NC State University, Fall 2026 \

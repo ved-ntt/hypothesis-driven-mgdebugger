@@ -188,6 +188,9 @@ breakpoints, the real hits, the divergence and the fix outcome); its LLM calls a
   came mostly from a harness defect on MBPP (given tests compared by value, so a list passed a tuple test);
   post-hoc with exact checks (`HDMG_EXACT_TESTS=1`) L2 repairs 89 of 104 MBPP bugs vs A's 77 at best
   (p = 0.017), and 200 vs 193 pooled (p = 0.27). `results/experiment_findings.md`, `results/heldout_*.md`.
+- **Pilot on larger programs (115-175 lines, bug in a helper):** L2 fixed 6 of 6 single-bug programs and 1 of
+  6 two-bug programs, at $0.004 each; A cost $0.33 each (about 80x) and ran out of budget after 6 (A 2, L2 3
+  on those). L2's open limitation: two bugs that reach the same test. `results/big_programs_pilot.md`.
 - **Variant L2 (observe-only breakpoints): as accurate as MGDebugger at one tenth of the cost (HumanEvalFix).** 149 of 151
   repaired (replicate: 150), $0.0010 per repair vs A's $0.0102; on the 148 paired problems A 143, L2 146
   (p = 0.45, replicate 147, p = 0.22). See `results/experiment_findings.md` and `results/al2_humanevalfix.md`.

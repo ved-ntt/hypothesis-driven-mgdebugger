@@ -306,3 +306,37 @@ about an eighth of the cost.
 - **Known gaps** (each seen on held-out data, none fixed, so that the held-out runs stay valid for the
   version they tested): an empty function body leaves nothing to observe (2 StarCoder problems); thin given
   tests let a fix pass them and still be wrong (about as often as A).
+
+## Pilot: larger programs (12 programs, 115-175 lines)
+
+`scripts/make_big_programs.py`: each program has 1 or 2 buggy HumanEvalFix functions among 5 correct
+HumanEval functions, all called from an entry `run_all`; the bug sits in a helper, not the entry. Exact
+given-test checks on. A ran out of its $2 budget after 6 programs; the other 6 are L2 only.
+Report: `big_programs_pilot.md`.
+
+| Program | Bugs | A | L2 | Cost, A / L2 |
+| --- | --- | --- | --- | --- |
+| BIG/0 | 1 | no | yes | $0.25 / $0.002 |
+| BIG/1 | 2 (2nd not exposed by the given tests) | no | no | $0.25 / $0.006 |
+| BIG/2 | 1 | yes | yes | $0.11 / $0.001 |
+| BIG/3 | 2 (2nd not exposed by the given tests) | no | no | $0.29 / $0.002 |
+| BIG/4 | 1 | no | yes | $0.26 / $0.001 |
+| BIG/5 | 2 (both reach the same test) | yes | no | $0.14 / $0.011 |
+| BIG/6 to BIG/11 | 1 or 2 | out of budget | 4 of 6 | |
+
+- **Paired (6 programs): A 2, L2 3.** One bug: A 1 of 3, L2 3 of 3. Two bugs: A 1 of 3, L2 0 of 3.
+  Far too few for a significance test.
+- **L2 overall: 7 of 12.** One bug: 6 of 6. Two bugs: 1 of 6.
+- **Cost grows much faster for A.** A: $0.33 per program, 350 LLM calls per program (261 of them in the
+  debug step, 86 deriving tests), 670k tokens. L2: $0.004, 5 calls, 21k tokens; about 80x cheaper.
+  On HumanEvalFix the ratio was about 10x. Decomposing 150 lines yields many functions, each needing
+  tests and debugging.
+- **L2 locates a single bug in a 150-line program reliably** (6 of 6, mostly in the first round).
+- **L2's limitation: two bugs that reach the same test.** In BIG/5 and BIG/11 L2 fixed one bug correctly,
+  but the test still failed because of the other, and its progress rule (more tests passing) threw the fix
+  away. A fixed BIG/5 because it tests functions one by one. A general remedy, not run: count a fix as
+  progress when the breakpoint value that diverged now matches.
+- **Generator flaw:** in BIG/1 and BIG/3 the given tests never exercise the second bug, so no debugger that
+  sees only the given tests can fix them. A corrected generator should require each bug to change a given
+  test's result.
+- BIG/9 contains HumanEval/123, which loops forever on its input (the same failure as on HumanEvalFix).

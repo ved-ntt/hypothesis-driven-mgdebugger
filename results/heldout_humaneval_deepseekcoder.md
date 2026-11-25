@@ -1,14 +1,14 @@
-# A vs L2: humaneval_deepseekcoder.jsonl
+# A vs D: humaneval_deepseekcoder.jsonl
 
-- A = simulated trace, L2 = observe-only breakpoints
-- Model: claude-haiku-5-5 (A), claude-haiku-5-5 (L2)
-- Problems compared: 32 (attempted by both runs; A attempted 32, L2 attempted 32)
-- Outer attempts: 2 (A), 2 (L2); harness fixed / fixed; k = 3 (L2)
+- A = MGDebugger, D = breakpoint localization
+- Model: claude-haiku-5-5 (A), claude-haiku-5-5 (D)
+- Problems compared: 32 (attempted by both runs; A attempted 32, D attempted 32)
+- Outer attempts: 2 (A), 2 (D); harness fixed / fixed; k = 3 (D)
 - Runs: `/mnt/c/Users/Vedantt/Downloads/NCSU/sem3/Testing/hypothesis-driven-mgdebugger/MGDebugger/src/output_data/experiments/humaneval_deepseekcoder_A_20261124-142116`, `/mnt/c/Users/Vedantt/Downloads/NCSU/sem3/Testing/hypothesis-driven-mgdebugger/MGDebugger/src/output_data/experiments/humaneval_deepseekcoder_L2_20261124-142116`
 
 ## Repairs
 
-| Metric | A (simulated trace) | L2 (observe-only breakpoints) |
+| Metric | A (MGDebugger) | D (breakpoint localization) |
 | --- | --- | --- |
 | Repaired, public-selection | 31 (96.9%) | 30 (93.8%) |
 | Repaired, hidden-selection (paper) | 32 (100.0%) | 30 (93.8%) |
@@ -17,22 +17,22 @@
 | Cost per repair (public-selection) | $0.0168 | $0.0018 |
 | Tokens per problem | 43,839 | 5,973 |
 | LLM calls per problem | 14.0 | 3.1 |
-| Cost ratio | | A costs 9.4x L2 |
+| Cost ratio | | A costs 9.4x D |
 
 ## Paired outcome (public-selection)
 
-| Both repaired | Only A | Only L2 | Neither |
+| Both repaired | Only A | Only D | Neither |
 | --- | --- | --- | --- |
 | 29 | 2 | 1 | 0 |
 
 Exact McNemar test on the 3 discordant problems: p = 1.000 (not significant at the 0.05 level: the difference could be chance).
 
 - Only A: HumanEval/125, HumanEval/130
-- Only L2: HumanEval/135
+- Only D: HumanEval/135
 
 ## Cost by stage (per problem)
 
-| Stage | A | L2 |
+| Stage | A | D |
 | --- | --- | --- |
 | derive_tests | $0.00929 (57%) | $0.00000 (0%) |
 | debug | $0.00545 (34%) | $0.00000 (0%) |
@@ -40,7 +40,7 @@ Exact McNemar test on the 3 discordant problems: p = 1.000 (not significant at t
 | localize | $0.00000 (0%) | $0.00125 (72%) |
 | fix | $0.00000 (0%) | $0.00048 (28%) |
 
-## What L2's breakpoint loop did
+## What D's breakpoint loop did
 
 | Measure | Value |
 | --- | --- |
@@ -53,7 +53,7 @@ Exact McNemar test on the 3 discordant problems: p = 1.000 (not significant at t
 | Breakpoints per valid round (mean) | 0.91 |
 | Fixes that passed the public tests, of fixes tried after a divergence | 26 of 26 |
 | Fixes tried in the entry function (vs a helper) | 26 of 26 |
-| Fallback fixes after a full match (L2) that passed | 6 of 6 |
+| Fallback fixes after a full match (D) that passed | 6 of 6 |
 | Attempts that returned a fix | 32 (94%) |
 | Rounds per returned fix (mean) | 1.88 |
 

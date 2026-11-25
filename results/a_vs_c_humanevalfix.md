@@ -7,7 +7,7 @@
 
 ## Repairs
 
-| Metric | A (simulated trace) | C (hypothesis loop) |
+| Metric | A (MGDebugger) | C (hypothesis loop) |
 | --- | --- | --- |
 | Repaired, public-selection | 143 (96.6%) | 144 (97.3%) |
 | Repaired, hidden-selection (paper) | 145 (98.0%) | 145 (98.0%) |

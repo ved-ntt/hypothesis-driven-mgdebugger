@@ -251,7 +251,7 @@ def test_run_script_verdicts_and_runaway_program_is_killed():
     assert not ok and ("MemoryError" in reason or "timeout" in reason)
 
 
-# ----- L2: observe-only breakpoints, fix after a full match
+# ----- D (observe=True; L2 during development): observe-only breakpoints, fix after a full match
 
 MAD = ("def mad(numbers):\n"
        "    mean = sum(numbers) / len(numbers)\n"
@@ -358,7 +358,7 @@ def test_prompts_show_the_expected_value_as_the_assert_writes_it():
     assert lz.shown_expected({"expected_output": [1]}) == [1]
     loc = {"breakpoints": [{"line": 3, "expr": "res", "expect": [[[1, 2]]]}]}
     llm = ScriptedLLM([J(loc), "```python\ndef pairs(xs):\n    return tuple(tuple(p) for p in xs)\n```"])
-    # the value matches, so L2 finds no divergence and falls back to a fix with the matched evidence
+    # the value matches, so D finds no divergence and falls back to a fix with the matched evidence
     r = lz.localize_and_fix(TUP, "pairs", [TUP_TEST], llm, k=1, observe=True)
     assert r.status == "fixed_fallback"
     assert "expected ((1, 2),)" in llm.prompt(0) and "tuple vs list" in llm.prompt(0)

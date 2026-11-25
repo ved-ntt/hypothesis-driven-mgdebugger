@@ -1,4 +1,4 @@
-"""Variant L: localize the bug with breakpoints, then fix only there.
+"""Variant D (and its first version, L): localize the bug with breakpoints, then fix only there.
 
 MGDebugger (variant A) finds the buggy function by decomposing the program into a tree of
 subfunctions and asking the LLM to write tests for each one. On HumanEvalFix that machinery is
@@ -15,7 +15,8 @@ about 80% of the token cost (decompose ~13%, derive tests ~67%). Variant L skips
   5. No divergence (every breakpoint matched) also goes into memory, so the next round looks
      elsewhere. Up to k rounds.
 
-Variant L2 (observe=True) adds two changes, aimed at L's main miss on HumanEvalFix: a bug inside a
+Variant D (observe=True; called L2 during development) adds three rules. The first two target L's main
+miss on HumanEvalFix: a bug inside a
 `return` expression, where every value computed before the line is correct and the model, free to
 write any expression, wrote the correct formula and saw it match.
   - Observe, don't recompute: a breakpoint expression must be a value the program holds (a variable,
@@ -32,7 +33,7 @@ happen and the sandbox says what DID happen, the same contract as variant C's hy
 the whole program at once instead of node by node.
 
 Nothing here imports MGDebugger. MGDebugger/src/debug_pipeline.py calls debug_program when
-HDMG_VARIANT=L and passes in its LLM call.
+HDMG_VARIANT=D (or L) and passes in its LLM call.
 """
 from __future__ import annotations
 

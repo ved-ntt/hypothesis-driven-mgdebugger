@@ -1,6 +1,6 @@
 # C vs L: humanevalfix.jsonl
 
-- C = hypothesis loop, L = breakpoint localization
+- C = hypothesis loop, L = breakpoints, first version
 - Model: claude-haiku-5-5 (C), claude-haiku-5-5 (L)
 - Problems compared: 151 (attempted by both runs; C attempted 151, L attempted 151)
 - Outer attempts: 2 (C), 2 (L); harness fixed / fixed; k = 3 (C); k = 3 (L)
@@ -8,7 +8,7 @@
 
 ## Repairs
 
-| Metric | C (hypothesis loop) | L (breakpoint localization) |
+| Metric | C (hypothesis loop) | L (breakpoints, first version) |
 | --- | --- | --- |
 | Repaired, public-selection | 147 (97.4%) | 129 (85.4%) |
 | Repaired, hidden-selection (paper) | 148 (98.0%) | 129 (85.4%) |

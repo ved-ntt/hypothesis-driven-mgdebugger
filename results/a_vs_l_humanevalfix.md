@@ -1,6 +1,6 @@
 # A vs L: humanevalfix.jsonl
 
-- A = simulated trace, L = breakpoint localization
+- A = MGDebugger, L = breakpoints, first version
 - Model: claude-haiku-5-5 (A), claude-haiku-5-5 (L)
 - Problems compared: 148 (attempted by both runs; A attempted 148, L attempted 151)
 - Outer attempts: 2 (A), 2 (L); harness fixed / fixed; k = 3 (L)
@@ -8,7 +8,7 @@
 
 ## Repairs
 
-| Metric | A (simulated trace) | L (breakpoint localization) |
+| Metric | A (MGDebugger) | L (breakpoints, first version) |
 | --- | --- | --- |
 | Repaired, public-selection | 143 (96.6%) | 126 (85.1%) |
 | Repaired, hidden-selection (paper) | 145 (98.0%) | 126 (85.1%) |

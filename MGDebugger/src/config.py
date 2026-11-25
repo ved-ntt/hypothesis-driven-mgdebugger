@@ -51,9 +51,12 @@ CURRENT_ATTEMPT = None
 # sandbox records real values, the first divergence localizes the bug, then one function is fixed
 # (hdmg/localize.py). It replaces mg_debug in debug_pipeline; the outer loop and scoring are unchanged.
 VARIANT = os.environ.get("HDMG_VARIANT", "A").strip().upper()
-# "L2": L with observe-only breakpoints and a fix after a full match (hdmg/localize.py, observe=True).
-if VARIANT not in ("A", "C", "L", "L2"):
-    raise ValueError(f"HDMG_VARIANT must be A, C, L or L2, got {VARIANT!r}")
+# "D": L with observe-only breakpoints, a fix after a full match and kept partial progress
+# (hdmg/localize.py, observe=True). Called "L2" during development; "L2" is still accepted.
+if VARIANT == "L2":
+    VARIANT = "D"
+if VARIANT not in ("A", "C", "L", "D"):
+    raise ValueError(f"HDMG_VARIANT must be A, C, L or D, got {VARIANT!r}")
 # [hdmg] Variant C: hypotheses per debug attempt; variant L: localize -> fix rounds per attempt.
 # Seconds per sandbox run (both). Pure C: no fallback to
 # debug_function, so every C fix comes from a confirmed hypothesis.
@@ -75,7 +78,7 @@ if HARNESS not in ("fixed", "published"):
 ONLY_DETECTABLE = os.environ.get("HDMG_ONLY_DETECTABLE", "1") == "1"
 # [hdmg] Exact given tests (fixed harness): the value comparison treats (1, 2) and [1, 2] as equal, but
 # the benchmark's own asserts use Python's ==. With HDMG_EXACT_TESTS=1 a given test passes only if its
-# assert passes, and L / L2 prompts show the expected value as the assert writes it. Off by default so
+# assert passes, and L / D prompts show the expected value as the assert writes it. Off by default so
 # earlier runs stay reproducible; matters on MBPP, whose functions often return tuples.
 EXACT_TESTS = os.environ.get("HDMG_EXACT_TESTS", "0") == "1"
 CURRENT_PUBLIC_TESTS = None

@@ -84,7 +84,7 @@ def main(run_dir):
     print(f"Run: {run_dir}")
     print(f"Variant: {params.get('VARIANT', 'A')}"
           + (f"  k={params.get('HYPOTHESIS_K')}  sandbox timeout={params.get('SANDBOX_TIMEOUT')} s"
-             if params.get("VARIANT") in ("C", "L", "L2") else ""))
+             if params.get("VARIANT") in ("C", "L", "L2", "D") else ""))
     print(f"Model: {params['MODEL']}  stop_on={params.get('STOP_ON')}  T={params.get('TEMPERATURE_EFFECTIVE')}"
           f"  min_p={params.get('USE_MIN_P')}  outer={params.get('MAX_OUTER_RETRY_EFFECTIVE')}")
     print(f"Dataset: {dataset}  seeds from: {seed_model}  problems: {n_total}  buggy: {n_buggy}  debugged so far: {n}")

@@ -29,7 +29,7 @@ SRC = os.path.join(ROOT, "MGDebugger", "src", "input_data")
 SETS = {
     "humanevalfix": os.path.join(SRC, "humanevalfix", "seeds.jsonl"),
     "humaneval_deepseekcoder": os.path.join(SRC, "humaneval", "seed", "deepseekcoder", "seed.jsonl"),
-    # held-out sets for variant L2 (never looked at while designing it): bugs written by other models
+    # held-out sets for variant D (never looked at while designing it): bugs written by other models
     "humaneval_starcoder": os.path.join(SRC, "humaneval", "seed", "starcoder", "seed.jsonl"),
     "mbpp_deepseekcoder": os.path.join(SRC, "mbpp", "seed", "deepseekcoder", "seed.jsonl"),
 }

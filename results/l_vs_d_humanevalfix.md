@@ -1,14 +1,14 @@
-# L vs L2: humanevalfix.jsonl
+# L vs D: humanevalfix.jsonl
 
-- L = breakpoint localization, L2 = observe-only breakpoints
-- Model: claude-haiku-5-5 (L), claude-haiku-5-5 (L2)
-- Problems compared: 151 (attempted by both runs; L attempted 151, L2 attempted 151)
-- Outer attempts: 2 (L), 2 (L2); harness fixed / fixed; k = 3 (L); k = 3 (L2)
+- L = breakpoints, first version, D = breakpoint localization
+- Model: claude-haiku-5-5 (L), claude-haiku-5-5 (D)
+- Problems compared: 151 (attempted by both runs; L attempted 151, D attempted 151)
+- Outer attempts: 2 (L), 2 (D); harness fixed / fixed; k = 3 (L); k = 3 (D)
 - Runs: `MGDebugger/src/output_data/experiments/humanevalfix_L_20261123-190742`, `MGDebugger/src/output_data/experiments/humanevalfix_L2_20261123-202524`
 
 ## Repairs
 
-| Metric | L (breakpoint localization) | L2 (observe-only breakpoints) |
+| Metric | L (breakpoints, first version) | D (breakpoint localization) |
 | --- | --- | --- |
 | Repaired, public-selection | 129 (85.4%) | 149 (98.7%) |
 | Repaired, hidden-selection (paper) | 129 (85.4%) | 149 (98.7%) |
@@ -17,22 +17,22 @@
 | Cost per repair (public-selection) | $0.0019 | $0.0010 |
 | Tokens per problem | 5,866 | 3,573 |
 | LLM calls per problem | 3.5 | 2.3 |
-| Cost ratio | | L costs 1.6x L2 |
+| Cost ratio | | L costs 1.6x D |
 
 ## Paired outcome (public-selection)
 
-| Both repaired | Only L | Only L2 | Neither |
+| Both repaired | Only L | Only D | Neither |
 | --- | --- | --- | --- |
 | 129 | 0 | 20 | 2 |
 
 Exact McNemar test on the 20 discordant problems: p = 0.000 (difference unlikely to be chance at the 0.05 level).
 
 - Only L: none
-- Only L2: HumanEval/4, HumanEval/11, HumanEval/27, HumanEval/29, HumanEval/30, HumanEval/52, HumanEval/54, HumanEval/65, HumanEval/66, HumanEval/77, HumanEval/79, HumanEval/84, HumanEval/103, HumanEval/115, HumanEval/118, HumanEval/120, HumanEval/125, HumanEval/127, HumanEval/159, HumanEval/162
+- Only D: HumanEval/4, HumanEval/11, HumanEval/27, HumanEval/29, HumanEval/30, HumanEval/52, HumanEval/54, HumanEval/65, HumanEval/66, HumanEval/77, HumanEval/79, HumanEval/84, HumanEval/103, HumanEval/115, HumanEval/118, HumanEval/120, HumanEval/125, HumanEval/127, HumanEval/159, HumanEval/162
 
 ## By bug type (public-selection)
 
-| Bug type | Problems | L | L2 |
+| Bug type | Problems | L | D |
 | --- | --- | --- | --- |
 | excess logic | 27 | 24 (88.9%) | 27 (100.0%) |
 | function misuse | 7 | 2 (28.6%) | 7 (100.0%) |
@@ -43,7 +43,7 @@ Exact McNemar test on the 20 discordant problems: p = 0.000 (difference unlikely
 
 ## Cost by stage (per problem)
 
-| Stage | L | L2 |
+| Stage | L | D |
 | --- | --- | --- |
 | localize | $0.00133 (82%) | $0.00070 (69%) |
 | fix | $0.00030 (18%) | $0.00032 (31%) |
@@ -61,11 +61,11 @@ Exact McNemar test on the 20 discordant problems: p = 0.000 (difference unlikely
 | Breakpoints per valid round (mean) | 1.21 |
 | Fixes that passed the public tests, of fixes tried after a divergence | 132 of 135 |
 | Fixes tried in the entry function (vs a helper) | 133 of 135 |
-| Fallback fixes after a full match (L2) that passed | 0 of 0 |
+| Fallback fixes after a full match (D) that passed | 0 of 0 |
 | Attempts that returned a fix | 132 (71%) |
 | Rounds per returned fix (mean) | 1.30 |
 
-## What L2's breakpoint loop did
+## What D's breakpoint loop did
 
 | Measure | Value |
 | --- | --- |
@@ -78,7 +78,7 @@ Exact McNemar test on the 20 discordant problems: p = 0.000 (difference unlikely
 | Breakpoints per valid round (mean) | 1.03 |
 | Fixes that passed the public tests, of fixes tried after a divergence | 149 of 149 |
 | Fixes tried in the entry function (vs a helper) | 147 of 149 |
-| Fallback fixes after a full match (L2) that passed | 2 of 2 |
+| Fallback fixes after a full match (D) that passed | 2 of 2 |
 | Attempts that returned a fix | 151 (99%) |
 | Rounds per returned fix (mean) | 1.23 |
 

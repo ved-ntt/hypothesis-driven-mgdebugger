@@ -94,7 +94,7 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
                 gold_tests = [{k: t[k] for k in ("input", "expected_output", "round") if k in t}
                               for t in problem["public_tests"]]
                 config.CURRENT_PUBLIC_TESTS = problem["public_tests"]
-                if config.EXACT_TESTS and config.VARIANT in ("L", "L2"):
+                if config.EXACT_TESTS and config.VARIANT in ("L", "D"):
                     # [hdmg] the loop checks fixes with the test's own assert and shows it in prompts
                     for g, t in zip(gold_tests, problem["public_tests"]):
                         g["assert"] = t["assert"]
@@ -115,13 +115,13 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
             for outer_retry in range(config.MAX_OUTER_RETRY):
                 config.CURRENT_ATTEMPT = outer_retry + 1
                 tok0 = config.TOTAL_PROMPT_TOKENS + config.TOTAL_COMPLETION_TOKENS
-                if config.VARIANT in ("L", "L2"):
+                if config.VARIANT in ("L", "D"):
                     # [hdmg] variant L: localize with breakpoints on the whole program, fix one function
                     fixed_code = _localizer()(
                         buggy_code, entry_point, gold_tests, complete=get_completion_with_retry,
                         k=config.HYPOTHESIS_K, timeout=config.SANDBOX_TIMEOUT, log_path=config.HYPOTHESIS_LOG,
                         log_context={"task_id": config.CURRENT_TASK_ID, "attempt": config.CURRENT_ATTEMPT},
-                        observe=config.VARIANT == "L2")
+                        observe=config.VARIANT == "D")
                 else:
                     fixed_code = mg_debug(buggy_code, gold_tests)
                 problem['fixed_codes'].append(fixed_code)

@@ -5,8 +5,8 @@
 #     backend: claude | mistral | vllm | ollama | openai | mock      (scripts/backend_env.sh)
 #     dataset: humanevalfix | humaneval | humaneval_starcoder | mbpp_deepseekcoder
 #              (cleaned seeds in data/clean/<dataset>.jsonl, made by scripts/clean_data.py)
-#     variant: A (MGDebugger's simulated trace) | C (hypothesis loop) | L (breakpoint localization, no decomposition)
-#              | L2 (L with observe-only breakpoints and a fix after a full match)
+#     variant: A (MGDebugger) | C (hypothesis loop inside MGDebugger's tree)
+#              | D (breakpoint localization, no decomposition) | L (D's first version, for the ablation)
 #     shards:  parallel processes (default 4)
 #
 # Budget: HDMG_RUN_BUDGET_USD (default 5) is the cap for the whole run, split evenly across shards.
@@ -17,9 +17,9 @@
 #
 # Resume an interrupted run (same backend, dataset and variant): only the problems no shard finished
 # are run, in new shard folders of the same run, then everything is merged again.
-#   HDMG_RESUME=MGDebugger/src/output_data/experiments/<run> scripts/run_experiment.sh claude humanevalfix L 4
+#   HDMG_RESUME=MGDebugger/src/output_data/experiments/<run> scripts/run_experiment.sh claude humanevalfix D 4
 set -euo pipefail
-BACKEND=${1:?backend}; DATASET=${2:?dataset}; VARIANT=${3:?variant A, C, L or L2}
+BACKEND=${1:?backend}; DATASET=${2:?dataset}; VARIANT=${3:?variant A, C, D or L}
 SHARDS=${4:-4}; MAX=${5:-}
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 

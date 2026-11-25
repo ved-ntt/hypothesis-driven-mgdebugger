@@ -288,7 +288,7 @@ result above, not instead of it. Report: `heldout_mbpp_exact.md`.
   run is the conservative one.
 - **A varies a lot between runs on MBPP**: the two A runs disagree on 26 problems (17 repaired only in the
   first, 9 only in the second), including 10 lost problems that never hit an exact-check failure. Single runs
-  of A on MBPP are noisy; L2's two MBPP runs agree more because they differ mostly where the check changed.
+  of A on MBPP are noisy.
 - A's exact run was interrupted after 53 problems and resumed; from the resume on, A's per-function tests ran
   in a child process (same verdicts except for programs that hang or crash; `utils.evaluate`).
 

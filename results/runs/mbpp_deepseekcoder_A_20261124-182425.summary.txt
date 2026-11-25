@@ -1,0 +1,19 @@
+(cleaned seeds: 60 undetectable or unusable bugs excluded)
+Run: output_data/experiments/mbpp_deepseekcoder_A_20261124-182425
+Variant: A
+Model: claude-haiku-5-5  stop_on=both  T=None  min_p=False  outer=2
+Dataset: mbpp  seeds from: deepseekcoder  problems: 500  buggy: 104  debugged so far: 104
+
+                               fixed    RSR %    acc %  tokens/problem
+hidden-selection (paper)          74     71.2     82.0           64211
+public-selection                  69     66.3     81.0           61606
+paper                                    39.0     80.0
+
+LLM calls: 3001 ok, 0 failed;  per problem: 28.9
+  debug          calls   1930   tokens    4073400   per problem   18.6 calls,    39167 tok
+  decompose      calls    149   tokens     330573   per problem    1.4 calls,     3179 tok
+  derive_tests   calls    922   tokens    2274015   per problem    8.9 calls,    21866 tok
+Spend: $2.561 total, $0.0246 per problem
+Attempts passing public but failing hidden tests (overfit): 13
+Hidden-selection fixes whose winning attempt made no debug call: 0 of 74
+First attempt that passed hidden tests: {1: 60, 2: 14, None: 30}

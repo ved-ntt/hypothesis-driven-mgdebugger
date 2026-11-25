@@ -269,4 +269,40 @@ accuracy gain on HumanEvalFix does not.** On held-out bugs L2 is somewhat less a
 assert's own arguments (tuples stay tuples), and shows L2 the expected value as the assert writes it.
 It applies to both variants (A's check of the top-level function uses the assert too). Because this was
 added after seeing the held-out results, the rerun is reported as post-hoc, next to the pre-registered
-result above, not instead of it. Result: pending (`heldout_mbpp_exact.md`).
+result above, not instead of it. Report: `heldout_mbpp_exact.md`.
+
+| MBPP, 104 problems | A, lenient run | A, exact run | L2, lenient run | L2, exact run |
+| --- | --- | --- | --- | --- |
+| Repaired, public-selection | 77 | 69 | 70 | **89** |
+| Repaired, hidden-selection | 83 | 74 | 74 | 91 |
+| Cost per problem | $0.0124 | $0.0246 | $0.0019 | $0.0017 |
+| LLM calls per problem | 13.8 | 28.9 | 3.4 | 2.9 |
+
+- **With exact checks L2 repairs 89 of 104, more than either A run.** Against A's better run (77, lenient):
+  only A 5, only L2 17, p = 0.017. Against A's exact run (69): only A 3, only L2 23, p < 0.001. A repaired
+  86 problems in at least one of its two runs; L2's single exact run repaired 89.
+- **A got worse and twice as expensive with exact checks**, mainly because its prompts were not changed:
+  A's debug prompt shows test cases as JSON, so when a list fails a tuple test the expected and actual values
+  print identically and A keeps retrying (28.9 calls per problem). L2's prompts show the assert's own
+  expected value. This asymmetry favours L2 in the exact run, which is why the comparison against A's lenient
+  run is the conservative one.
+- **A varies a lot between runs on MBPP**: the two A runs disagree on 26 problems (17 repaired only in the
+  first, 9 only in the second), including 10 lost problems that never hit an exact-check failure. Single runs
+  of A on MBPP are noisy; L2's two MBPP runs agree more because they differ mostly where the check changed.
+- A's exact run was interrupted after 53 problems and resumed; from the resume on, A's per-function tests ran
+  in a child process (same verdicts except for programs that hang or crash; `utils.evaluate`).
+
+**Held-out pooled, post-hoc** (MBPP: L2 exact run against A's better, lenient run; the HumanEval sets had no
+fixes affected by the check and are unchanged): A 193, L2 200 of 224 (only A 11, only L2 18, p = 0.27), at
+about an eighth of the cost.
+
+### Conclusion of the held-out check
+
+- **Cost: general.** L2 is 6.6x to 15x cheaper than MGDebugger on every set, because it never decomposes
+  the program or writes tests for subfunctions; 2.3 to 3.4 LLM calls per problem against 10.8 to 28.9.
+- **Accuracy: not worse, not shown to be better.** Pre-registered: L2 181, A 193 of 224 (p = 0.065).
+  After fixing a harness defect that hurt L2 on MBPP (post-hoc): L2 200, A 193 (p = 0.27). The only
+  significant difference on held-out data is MBPP after the fix, in L2's favour.
+- **Known gaps** (each seen on held-out data, none fixed, so that the held-out runs stay valid for the
+  version they tested): an empty function body leaves nothing to observe (2 StarCoder problems); thin given
+  tests let a fix pass them and still be wrong (about as often as A).

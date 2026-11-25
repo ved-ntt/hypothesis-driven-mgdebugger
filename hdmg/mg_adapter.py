@@ -1,8 +1,8 @@
-"""Plug the hypothesis loop into MGDebugger's recursion (variant C).
+"""Plug the hypothesis loop into MGDebugger's recursion (variant B).
 
 MGDebugger walks the decomposed tree bottom-up and, at each function whose derived tests fail,
 calls debug_function(function_code, function_name, test_cases) -> (analysis, fixed_function | None).
-Finding WHICH function is buggy stays MGDebugger's job. Variant C replaces only that call:
+Finding WHICH function is buggy stays MGDebugger's job. Variant B replaces only that call:
 debug_function_hypothesis takes the same arguments plus the full program (the target can't run
 without its helpers), runs the hypothesis loop there, and returns the same pair.
 
@@ -98,7 +98,7 @@ def debug_function_hypothesis(function_code: str, function_name: str, test_cases
                               k: int = DEFAULT_K, timeout: float = DEFAULT_TIMEOUT,
                               log_path: Optional[str] = None,
                               log_context: Optional[dict] = None) -> tuple[Optional[str], Optional[str]]:
-    """Variant C's debug step. Same contract as MGDebugger's debug_function: (analysis, fix or None).
+    """Variant B's debug step. Same contract as MGDebugger's debug_function: (analysis, fix or None).
 
     function_code  the target as MGDebugger holds it; unused (the loop reads the target from
                    full_code), kept so the call has debug_function's arguments

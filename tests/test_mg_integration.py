@@ -1,4 +1,4 @@
-"""MGDebugger's real recursion (mg_debug) with variant A and C, the LLM replaced by a fake client.
+"""MGDebugger's real recursion (mg_debug) with variants A and B, the LLM replaced by a fake client.
 
 Decomposition and test derivation are stubbed to the deck's make_palindrome tree, so the only
 LLM calls are the debug step's. Needs MGDebugger's requirements (loguru, openai); skipped otherwise.
@@ -77,8 +77,8 @@ def root_output(code):
     return run_call(code, "make_palindrome('cata')")["result"]
 
 
-def test_variant_c_fixes_the_failing_node_inside_the_tree(mg):
-    fixed, stages, nodes = mg("C", [J(H1), J(H2), GOOD_FIX])
+def test_variant_b_fixes_the_failing_node_inside_the_tree(mg):
+    fixed, stages, nodes = mg("B", [J(H1), J(H2), GOOD_FIX])
     assert root_output(fixed) == "catac"
     assert stages == ["hypothesis", "hypothesis", "fix"]
     (node,) = nodes
@@ -86,11 +86,11 @@ def test_variant_c_fixes_the_failing_node_inside_the_tree(mg):
     assert node["task_id"] == "HumanEval/10" and node["returned_fix"] is True
 
 
-def test_variant_c_without_a_confirmed_hypothesis_changes_nothing(mg):
+def test_variant_b_without_a_confirmed_hypothesis_changes_nothing(mg):
     # pure C: no simulated-trace fallback, so the bug survives and MGDebugger moves up the tree
     at_suffix = [J(H1), J(dict(H1, hypothesis="b")), J(dict(H1, hypothesis="c"))]
     at_root = [J({"hypothesis": h, "observe": ["s"], "expect": {"s": ["not cata"]}, "why": "."}) for h in "xyz"]
-    fixed, stages, nodes = mg("C", at_suffix + at_root)
+    fixed, stages, nodes = mg("B", at_suffix + at_root)
     assert root_output(fixed) == "catatac"
     assert stages == ["hypothesis"] * 6
     assert [(n["function"], n["status"]) for n in nodes] == [("find_longest_suffix", "no_confirmed"),

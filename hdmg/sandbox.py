@@ -3,6 +3,7 @@
 Two entry points:
   run_call(code, call_expr)                         -> what the call returned / printed / raised
   run_traced(code, call_expr, func_name, variables) -> the same, plus a VariableTracer record
+  run_breakpoints(code, call_expr, breakpoints)     -> the same, plus every breakpoint hit (variant C)
 
 A timeout or exception is an observation, not an error: it comes back in "status".
 Upstream MGDebugger runs code with exec() in a thread of the debugger's own process;
@@ -37,12 +38,26 @@ if job.get("mem_mb"):
         resource.setrlimit(resource.RLIMIT_AS, (lim, lim))
     except Exception:
         pass  # not available on Windows
-from tracer import VariableTracer
+from tracer import VariableTracer, BreakpointTracer
+class _SoftTimeout(BaseException):
+    pass
+if job.get("soft_timeout"):
+    # stop the program from inside shortly before the parent kills it, so what was recorded
+    # up to then (breakpoint hits) still comes back
+    import signal
+    def _alarm(signum, frame):
+        raise _SoftTimeout()
+    try:
+        signal.signal(signal.SIGALRM, _alarm)
+        signal.setitimer(signal.ITIMER_REAL, job["soft_timeout"])
+    except (AttributeError, ValueError):
+        pass  # no SIGALRM on Windows
 out = {"status": "ok", "stdout": "", "result_repr": None, "result": None}
 buf = io.StringIO()
 real_stdout = sys.stdout
 ns = {"__name__": "__hdmg__"}
 tracer = None
+bp_tracer = None
 try:
     sys.stdout = buf
     try:
@@ -50,7 +65,12 @@ try:
     except Exception:
         pass  # e.g. numpy missing; keep going
     exec(compile(job["code"], "<candidate>", "exec"), ns)
-    if job.get("trace"):
+    if job.get("breakpoints"):
+        bp_tracer = BreakpointTracer([(b["line"], b["expr"]) for b in job["breakpoints"]],
+                                     max_hits=job.get("max_hits", 20), max_repr=job.get("max_repr", 300))
+        with bp_tracer:
+            value = eval(job["call"], ns)
+    elif job.get("trace"):
         t = job["trace"]
         tracer = VariableTracer(t["func"], t["variables"], calls=t.get("calls", "first"),
                                 max_events=t.get("max_events", 500), max_repr=t.get("max_repr", 300))
@@ -58,11 +78,14 @@ try:
             value = eval(job["call"], ns)
     else:
         value = eval(job["call"], ns)
-    out["result_repr"] = repr(value)[:2000]
+    out["result_repr"] = repr(value)[:job.get("max_result", 2000)]
     try:
         json.dumps(value); out["result"] = value
     except (TypeError, ValueError):
         pass
+except _SoftTimeout:
+    out["status"] = "timeout"
+    out["timeout_s"] = job["soft_timeout"]
 except MemoryError:
     out["status"] = "memory"
 except BaseException as e:
@@ -71,9 +94,16 @@ except BaseException as e:
     out["traceback"] = traceback.format_exc()[-2000:]
 finally:
     sys.stdout = real_stdout
+    if job.get("soft_timeout"):
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        except Exception:
+            pass
 out["stdout"] = buf.getvalue()[-2000:]
 if tracer is not None:
     out["trace"] = tracer.to_dict()
+if bp_tracer is not None:
+    out["breakpoints"] = bp_tracer.to_list()
 print(job["mark"] + json.dumps(out, default=repr))
 '''
 
@@ -92,9 +122,10 @@ def _run(job, timeout):
     return {"status": "crash", "returncode": proc.returncode, "stderr": proc.stderr[-2000:]}
 
 
-def run_call(code, call_expr, timeout=5, mem_mb=512, prelude=PRELUDE):
+def run_call(code, call_expr, timeout=5, mem_mb=512, prelude=PRELUDE, max_result=2000):
     """Execute `code`, then evaluate `call_expr` (e.g. "make_palindrome('cata')")."""
-    return _run({"code": code, "call": call_expr, "prelude": prelude, "mem_mb": mem_mb}, timeout)
+    return _run({"code": code, "call": call_expr, "prelude": prelude, "mem_mb": mem_mb,
+                 "max_result": max_result}, timeout)
 
 
 def run_traced(code, call_expr, func_name, variables, timeout=5, mem_mb=512, calls="first",
@@ -104,6 +135,82 @@ def run_traced(code, call_expr, func_name, variables, timeout=5, mem_mb=512, cal
              "max_events": max_events, "max_repr": max_repr}
     return _run({"code": code, "call": call_expr, "prelude": prelude, "mem_mb": mem_mb,
                  "trace": trace}, timeout)
+
+
+def run_breakpoints(code, call_expr, breakpoints, timeout=5, mem_mb=512, max_hits=20, max_repr=300,
+                    prelude=PRELUDE):
+    """run_call, plus the value of each breakpoint's expression every time its line is reached.
+
+    breakpoints: [{"line": int, "expr": str}], line numbers counted in `code` from 1. The result's
+    "breakpoints" lists, per breakpoint, its hits [{"seq", "repr"}] in execution order."""
+    return _run({"code": code, "call": call_expr, "prelude": prelude, "mem_mb": mem_mb,
+                 "breakpoints": [{"line": int(b["line"]), "expr": str(b["expr"])} for b in breakpoints],
+                 "max_hits": max_hits, "max_repr": max_repr,
+                 "soft_timeout": max(0.5, min(timeout - 1.0, timeout * 0.8))}, timeout)
+
+
+_SCRIPT_CHILD = r'''
+import sys
+if len(sys.argv) > 1 and int(sys.argv[1]):
+    try:
+        import resource
+        lim = int(sys.argv[1]) * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_AS, (lim, lim))
+    except Exception:
+        pass
+code = sys.stdin.read()
+try:
+    exec(compile(code, "<script>", "exec"), {"__name__": "__hdmg__"})
+except AssertionError as e:
+    print("@@HDMG_FAIL@@AssertionError: " + str(e)[:500]); sys.exit(3)
+except MemoryError:
+    print("@@HDMG_FAIL@@MemoryError"); sys.exit(4)
+except BaseException as e:
+    print("@@HDMG_FAIL@@" + type(e).__name__ + ": " + str(e)[:500]); sys.exit(5)
+'''
+
+
+def run_script(code, timeout=10, mem_mb=1024):
+    """Run a whole script (program + asserts) in a child process. Returns (passed, reason).
+
+    Used by MGDebugger's evaluate_simple / evaluate_given_tests under the fixed harness: upstream
+    exec()s the script in a thread of the debugger itself, and a timed-out thread keeps running,
+    so a buggy program with an infinite loop that allocates grows until the OS kills the run."""
+    try:
+        proc = subprocess.run([sys.executable, "-I", "-c", _SCRIPT_CHILD, str(mem_mb)], input=code,
+                              capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, f"timeout after {timeout} s"
+    if proc.returncode == 0:
+        return True, ""
+    for line in reversed(proc.stdout.splitlines()):
+        if line.startswith("@@HDMG_FAIL@@"):
+            return False, line[len("@@HDMG_FAIL@@"):]
+    return False, f"exit code {proc.returncode}: {proc.stderr[-300:]}"
+
+
+def test_call(func_name, test):
+    """The call to run for a test case. If the test carries its assert (HDMG_EXACT_TESTS), the call is
+    taken from the assert's source, so arguments keep their types (a tuple stays a tuple; the parsed
+    JSON input would turn it into a list). Otherwise it is built from the input."""
+    text = (test.get("assert") or "").strip()
+    if text:
+        import ast
+        try:
+            node = ast.parse(text).body[0]
+            for sub in ast.walk(node.test if isinstance(node, ast.Assert) else node):
+                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id == func_name:
+                    src = ast.get_source_segment(text, sub)
+                    if src:
+                        return src
+        except (SyntaxError, IndexError):
+            pass
+    return call_expr_from_input(func_name, test["input"])
+
+
+def assert_passes(code, assert_text, timeout=10):
+    """Does the benchmark's own assert statement pass on `code`? Exact Python semantics: (1, 2) != [1, 2]."""
+    return run_call(code + "\n\n" + assert_text + "\n", "True", timeout=timeout).get("status") == "ok"
 
 
 def sequences(result, call=0, as_repr=False):

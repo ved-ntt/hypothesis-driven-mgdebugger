@@ -1,0 +1,23 @@
+(cleaned seeds: 13 undetectable bugs excluded)
+Run: MGDebugger/src/output_data/experiments/humanevalfix_B_20261123-160202
+Variant: B  k=3  sandbox timeout=5.0 s
+Model: claude-haiku-5-5  stop_on=both  T=None  min_p=False  outer=2
+Dataset: humanevalfix  seeds from: claude-haiku-5-5  problems: 164  buggy: 151  debugged so far: 12
+  (partial run: RSR below is over the 12 problems attempted)
+
+                               fixed    RSR %    acc %  tokens/problem
+hidden-selection (paper)          12    100.0      nan           19667
+public-selection                  12    100.0      nan           19667
+
+LLM calls: 109 ok, 0 failed;  per problem: 9.1
+  decompose      calls     12   tokens      30726   per problem    1.0 calls,     2560 tok
+  derive_tests   calls     83   tokens     184248   per problem    6.9 calls,    15354 tok
+  fix            calls      5   tokens       5764   per problem    0.4 calls,      480 tok
+  hypothesis     calls      9   tokens      15270   per problem    0.8 calls,     1272 tok
+Hypothesis loop: 4 debug calls  {'fixed': 3, 'fix_failed': 1}
+  rounds 6  {'confirmed': 5, 'rejected': 1}  confirm rate 83% of valid hypotheses
+  debug calls that returned a fix: 3
+Spend: $0.070 total, $0.0058 per problem
+Attempts passing public but failing hidden tests (overfit): 0
+Hidden-selection fixes whose winning attempt made no debug call: 8 of 12  ['HumanEval/0', 'HumanEval/4', 'HumanEval/1', 'HumanEval/9', 'HumanEval/6', 'HumanEval/10', 'HumanEval/3', 'HumanEval/7']
+First attempt that passed hidden tests: {1: 12}

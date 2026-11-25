@@ -96,8 +96,12 @@ def get_completion_with_retry(messages, model=MODEL, max_retries=MAX_VLLM_RETRIE
             _log_call({"task_id": config.CURRENT_TASK_ID, "attempt": config.CURRENT_ATTEMPT,
                        "stage": _caller_stage(), "model": model, "ok": False, "error": str(e)[:300]})
             if attempt < max_retries - 1:
-                logger.info(f"Retrying in {RETRY_DELAY} seconds...")
-                time.sleep(RETRY_DELAY)
+                # [hdmg] exponential backoff (2, 4, 8 ... capped at 60 s) so parallel shards that hit a
+                # rate limit wait instead of spending all retries in a second; upstream: RETRY_DELAY = 0
+                delay = max(RETRY_DELAY, min(60.0, config.RETRY_BACKOFF * 2 ** attempt)) \
+                    if config.RETRY_BACKOFF > 0 else RETRY_DELAY
+                logger.info(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
             else:
                 logger.error("Max retries reached. Giving up.")
                 raise 

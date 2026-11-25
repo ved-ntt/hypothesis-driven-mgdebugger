@@ -6,8 +6,19 @@ from tqdm import tqdm
 from utils import evaluate_simple, evaluate_given_tests, parse_transcoder_problem_content
 from testcase_utils import get_parameter_names, parse_tests
 from mg_debugger import mg_debug
+from llm_client import get_completion_with_retry  # [hdmg] variant C
 from config import MAX_OUTER_RETRY, CONTINUOUS_RETRY
 import config
+
+
+def _localizer():
+    """[hdmg] Variant C's debug step, from hdmg/localize.py at the repo root."""
+    import os, sys
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if root not in sys.path:
+        sys.path.append(root)
+    from hdmg.localize import debug_program
+    return debug_program
 
 
 def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str = None):
@@ -20,10 +31,21 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
 
     unsolved_seeds = []
     # filter those problems that are not solved
+    skipped_undetectable = 0
     for i in range(len(seeds)):
         problem = json.loads(seeds[i])
         if not problem["is_solved"]:
+            # [hdmg] cleaned seeds only: "usable" = detectable, has a parsed given test, reference passes it
+            if config.ONLY_DETECTABLE and problem.get("usable", problem.get("detectable")) is False:
+                skipped_undetectable += 1
+                continue
             unsolved_seeds.append(problem)
+    if skipped_undetectable:
+        logger.info(f"Skipped {skipped_undetectable} problems that are undetectable or not usable")
+    if config.SHARD:  # [hdmg] main.py --shard i/N: every N-th problem, starting at i
+        index, count = config.SHARD
+        unsolved_seeds = unsolved_seeds[index::count]
+        logger.info(f"Shard {index}/{count}: {len(unsolved_seeds)} problems")
 
     # parse transcoder problems
     if "transcoder" in input_seeds.lower():
@@ -67,8 +89,19 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
                 logger.info(f"Extracted {len(problem['given_tests'])} given tests, only using the first 3 samples")
                 problem["given_tests"] = problem["given_tests"][:3]
 
-            gold_tests_raw = "\n".join(problem["given_tests"]).replace(entry_point, "candidate")
-            gold_tests = parse_tests(gold_tests_raw, parameter_names, entry_point)["test_cases"]
+            if config.HARNESS == "fixed" and "public_tests" in problem:
+                # [hdmg] cleaned seeds: every given test, including round(...) and "is None" forms
+                gold_tests = [{k: t[k] for k in ("input", "expected_output", "round") if k in t}
+                              for t in problem["public_tests"]]
+                config.CURRENT_PUBLIC_TESTS = problem["public_tests"]
+                if config.EXACT_TESTS and config.VARIANT == "C":
+                    # [hdmg] the loop checks fixes with the test's own assert and shows it in prompts
+                    for g, t in zip(gold_tests, problem["public_tests"]):
+                        g["assert"] = t["assert"]
+            else:
+                gold_tests_raw = "\n".join(problem["given_tests"]).replace(entry_point, "candidate")
+                gold_tests = parse_tests(gold_tests_raw, parameter_names, entry_point)["test_cases"]
+            config.CURRENT_ENTRY_POINT = entry_point  # [hdmg]
             logger.info(f"Extracted gold test cases: {gold_tests}")
 
             problem['fixed_codes'] = []  # Initialize list to store fixed codes for each retry
@@ -82,7 +115,15 @@ def debug_dataset(input_seeds: str, max_examples: int = None, output_folder: str
             for outer_retry in range(config.MAX_OUTER_RETRY):
                 config.CURRENT_ATTEMPT = outer_retry + 1
                 tok0 = config.TOTAL_PROMPT_TOKENS + config.TOTAL_COMPLETION_TOKENS
-                fixed_code = mg_debug(buggy_code, gold_tests)
+                if config.VARIANT == "C":
+                    # [hdmg] variant C: localize with breakpoints on the whole program, fix one function
+                    fixed_code = _localizer()(
+                        buggy_code, entry_point, gold_tests, complete=get_completion_with_retry,
+                        k=config.HYPOTHESIS_K, timeout=config.SANDBOX_TIMEOUT, log_path=config.HYPOTHESIS_LOG,
+                        log_context={"task_id": config.CURRENT_TASK_ID, "attempt": config.CURRENT_ATTEMPT},
+                        observe=True)
+                else:
+                    fixed_code = mg_debug(buggy_code, gold_tests)
                 problem['fixed_codes'].append(fixed_code)
                 problem['mg_debug_retries'] += 1
 
@@ -175,7 +216,7 @@ def _log_final_statistics(seeds, unsolved_seeds, total_unsolved, fixed_problems,
     logger.info(f"=== Final Results ===")
     logger.info(f"Total unsolved problems in seeds: {total_unsolved}")
     logger.info(f"Problems fixed by our method: {fixed_problems}")
-    logger.info(f"Success rate: {fixed_problems / total_unsolved * 100:.2f}%")
+    logger.info(f"Success rate: {fixed_problems / max(total_unsolved, 1) * 100:.2f}%")  # [hdmg] max(): an empty shard has 0 problems
     logger.info(f"Debug retries distribution for solved problems: {debug_retries_counter}")
 
     logger.info(f"Total solved problems before: {len(seeds) - total_unsolved}")
@@ -211,7 +252,7 @@ def _log_final_statistics(seeds, unsolved_seeds, total_unsolved, fixed_problems,
         scores = {
             "total_unsolved": total_unsolved,
             "fixed_problems": fixed_problems,
-            "success_rate": fixed_problems / total_unsolved * 100,
+            "success_rate": fixed_problems / max(total_unsolved, 1) * 100,
             "debug_retries_distribution": debug_retries_counter,
             "total_solved_problems_before": len(seeds) - total_unsolved,
             "total_solved_problems_after": len(seeds) - total_unsolved + fixed_problems,

@@ -1,0 +1,18 @@
+(cleaned seeds: 13 undetectable bugs excluded)
+Run: MGDebugger/src/output_data/experiments/humanevalfix_A_20261123-160502
+Variant: A
+Model: claude-haiku-5-5  stop_on=both  T=None  min_p=False  outer=2
+Dataset: humanevalfix  seeds from: claude-haiku-5-5  problems: 164  buggy: 151  debugged so far: 151
+
+                               fixed    RSR %    acc %  tokens/problem
+hidden-selection (paper)         145     96.0     88.4           28189
+public-selection                 143     94.7     87.2           27182
+
+LLM calls: 1602 ok, 0 failed;  per problem: 10.6
+  debug          calls    325   tokens     787078   per problem    2.2 calls,     5212 tok
+  decompose      calls    158   tokens     430697   per problem    1.0 calls,     2852 tok
+  derive_tests   calls   1119   tokens    3058612   per problem    7.4 calls,    20256 tok
+Spend: $1.470 total, $0.0097 per problem
+Attempts passing public but failing hidden tests (overfit): 6
+Hidden-selection fixes whose winning attempt made no debug call: 49 of 145  ['HumanEval/4', 'HumanEval/8', 'HumanEval/35', 'HumanEval/45', 'HumanEval/22', 'HumanEval/46', 'HumanEval/72', 'HumanEval/84', 'HumanEval/73', 'HumanEval/94', 'HumanEval/120', 'HumanEval/127', 'HumanEval/134', 'HumanEval/117', 'HumanEval/148', 'HumanEval/13', 'HumanEval/17', 'HumanEval/27', 'HumanEval/49', 'HumanEval/63', 'HumanEval/33', 'HumanEval/103', 'HumanEval/102', 'HumanEval/136', 'HumanEval/116', 'HumanEval/155', 'HumanEval/6', 'HumanEval/10', 'HumanEval/14', 'HumanEval/29', 'HumanEval/57', 'HumanEval/76', 'HumanEval/97', 'HumanEval/115', 'HumanEval/122', 'HumanEval/144', 'HumanEval/158', 'HumanEval/7', 'HumanEval/47', 'HumanEval/20', 'HumanEval/44', 'HumanEval/21', 'HumanEval/61', 'HumanEval/62', 'HumanEval/96', 'HumanEval/104', 'HumanEval/131', 'HumanEval/109', 'HumanEval/133']
+First attempt that passed hidden tests: {1: 141, 2: 4, None: 6}

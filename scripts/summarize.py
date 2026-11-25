@@ -26,7 +26,8 @@ PAPER = {
 def main(run_dir):
     params = json.load(open(os.path.join(run_dir, "params.json")))
     seeds_path = params["input_seeds"]
-    for base in [os.path.join(run_dir, *[".."] * k) for k in range(3, 8)]:
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "MGDebugger", "src")
+    for base in [src] + [os.path.join(run_dir, *[".."] * k) for k in range(2, 8)]:
         if os.path.exists(os.path.join(base, seeds_path)):
             seeds_path = os.path.join(base, seeds_path)
             break
@@ -34,6 +35,12 @@ def main(run_dir):
     n_total = len(seeds)
     n_solved_before = sum(s["is_solved"] for s in seeds)
     n_buggy = n_total - n_solved_before
+    # [cleaned seeds] undetectable bugs are skipped by the run, so they are not part of its RSR
+    if params.get("ONLY_DETECTABLE") and any("detectable" in s for s in seeds):
+        n_undetectable = sum(1 for s in seeds if not s["is_solved"]
+                             and s.get("usable", s.get("detectable")) is False)
+        n_buggy -= n_undetectable
+        print(f"(cleaned seeds: {n_undetectable} undetectable or unusable bugs excluded)")
 
     res_files = [f for f in glob.glob(os.path.join(run_dir, "*_debugging_seeds_from_*.jsonl"))]
     problems = [json.loads(l) for l in open(res_files[0])]
@@ -62,8 +69,12 @@ def main(run_dir):
     tok_p = sum(tokens_until(p, "first_public_attempt") for p in attempted)
 
     parts = seeds_path.replace("\\", "/").split("/")
-    dataset = next((d for d in ["humanevalfix", "humaneval", "mbpp"] if d in parts), "?")
+    # cleaned seeds are data/clean/<dataset>[_<model>].jsonl
+    dataset = next((d for d in ["humanevalfix", "humaneval", "mbpp"] if any(p.startswith(d) for p in parts)), "?")
     seed_model = parts[-2]
+    if parts[-2] == "clean":
+        seed_model = next((m for m in ["deepseekcoder", "codeqwen", "codestral", "starcoder2", "starcoder",
+                                       "codellama"] if m in parts[-1]), "?")
     if dataset == "humanevalfix":  # buggy code is human-written; key the paper row by the debugging model
         m = params["MODEL"].lower()
         seed_model = next((k for k, pat in [("deepseekcoder", "deepseek"), ("codeqwen", "codeqwen"),
@@ -71,9 +82,12 @@ def main(run_dir):
     paper = PAPER.get((dataset, seed_model), {})
 
     print(f"Run: {run_dir}")
-    print(f"Variant: {params.get('VARIANT', 'A')}"
+    v = params.get("VARIANT", "A")
+    if params.get("VARIANT_SCHEME") != 2:  # runs made before the letters were final
+        v = {"C": "B", "L" + "2": "C", "D": "C"}.get(v, v)
+    print(f"Variant: {v}"
           + (f"  k={params.get('HYPOTHESIS_K')}  sandbox timeout={params.get('SANDBOX_TIMEOUT')} s"
-             if params.get("VARIANT") == "C" else ""))
+             if v in ("B", "C") else ""))
     print(f"Model: {params['MODEL']}  stop_on={params.get('STOP_ON')}  T={params.get('TEMPERATURE_EFFECTIVE')}"
           f"  min_p={params.get('USE_MIN_P')}  outer={params.get('MAX_OUTER_RETRY_EFFECTIVE')}")
     print(f"Dataset: {dataset}  seeds from: {seed_model}  problems: {n_total}  buggy: {n_buggy}  debugged so far: {n}")
@@ -92,8 +106,15 @@ def main(run_dir):
     for stage, (k, t) in sorted(by_stage.items()):
         print(f"  {stage:14} calls {k:>6}   tokens {t:>10}   per problem {k / n if n else 0:>6.1f} calls, {t / n if n else 0:>8.0f} tok")
     nodes_path = os.path.join(run_dir, "hypothesis_nodes.jsonl")
-    if os.path.exists(nodes_path):  # variant C
-        nodes = [json.loads(l) for l in open(nodes_path) if l.strip()]
+    nodes = [json.loads(l) for l in open(nodes_path) if l.strip()] if os.path.exists(nodes_path) else []
+    if nodes and nodes[0].get("type") == "localize":  # variant C
+        rounds = [r for nd in nodes for r in nd.get("rounds", [])]
+        print(f"Localize loop: {len(nodes)} attempts  {dict(collections.Counter(nd['status'] for nd in nodes))}")
+        print(f"  rounds {len(rounds)}  {dict(collections.Counter(r['verdict'] for r in rounds))}")
+        bps = [b for r in rounds for b in (r.get("breakpoints") or [])]
+        print(f"  breakpoints placed {len(bps)} ({len(bps) / len(rounds) if rounds else 0:.1f} per round);"
+              f"  attempts that returned a fix: {sum(nd['returned_fix'] for nd in nodes)}")
+    elif nodes:  # variant C
         rounds = [r for nd in nodes for r in nd.get("rounds", [])]
         verdicts = collections.Counter(r["verdict"] for r in rounds)
         judged = verdicts["confirmed"] + verdicts["rejected"]
@@ -113,9 +134,9 @@ def main(run_dir):
     print(f"Attempts passing public but failing hidden tests (overfit): {overfit}")
     # Did the winning attempt call the debug step at all? If not, the "fix" came from the
     # decomposition rewrite (temperature 0.8), picked out by the hidden tests.
-    # variant A's debug step logs as "debug", variant C's as "hypothesis" / "fix"
+    # variant A's debug step logs as "debug", B's as "hypothesis" / "fix", C's as "localize" / "fix"
     debug_calls = collections.Counter((c["task_id"], c["attempt"]) for c in ok
-                                      if c["stage"] in ("debug", "hypothesis", "fix"))
+                                      if c["stage"] in ("debug", "hypothesis", "fix", "localize"))
     winners = [p for p in attempted if p.get("first_hidden_attempt")]
     no_debug = [p["task_id"] for p in winners if debug_calls[(p["task_id"], p["first_hidden_attempt"])] == 0]
     print(f"Hidden-selection fixes whose winning attempt made no debug call: {len(no_debug)} of {len(winners)}"

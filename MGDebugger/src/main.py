@@ -21,11 +21,16 @@ from config import (
 )
 
 
-def setup_logging_and_output(input_seeds: str):
+def setup_logging_and_output(input_seeds: str, output_folder: str = None):
     """Setup logging and create output directory"""
-    seed_stamp = input_seeds.split("input_data/")[-1].replace("/seed.jsonl", "")
+    if "input_data/" in input_seeds:
+        seed_stamp = input_seeds.split("input_data/")[-1].replace("/seed.jsonl", "")
+    else:  # [hdmg] cleaned seeds elsewhere (data/clean/<name>.jsonl): name the folder after the file
+        seed_stamp = os.path.splitext(os.path.basename(input_seeds))[0]
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    output_folder = f"./output_data/{seed_stamp}/{timestamp}"
+    if output_folder is None:  # [hdmg] --out names the folder; --shard keeps parallel shards apart
+        suffix = f"_shard{config.SHARD[0]}of{config.SHARD[1]}" if config.SHARD else ""
+        output_folder = f"./output_data/{seed_stamp}/{timestamp}{suffix}"
     os.makedirs(output_folder, exist_ok=True)
 
     # Configure logger
@@ -56,8 +61,13 @@ def setup_logging_and_output(input_seeds: str):
             "TEMPERATURE_EFFECTIVE": config.TEMPERATURE,
             "LLM_BASE_URL": config.LLM_BASE_URL,
             "VARIANT": config.VARIANT,
+            "VARIANT_SCHEME": config.VARIANT_SCHEME,
             "HYPOTHESIS_K": config.HYPOTHESIS_K,
             "SANDBOX_TIMEOUT": config.SANDBOX_TIMEOUT,
+            "HARNESS": config.HARNESS,
+            "EXACT_TESTS": config.EXACT_TESTS,
+            "ONLY_DETECTABLE": config.ONLY_DETECTABLE,
+            "SHARD": list(config.SHARD) if config.SHARD else None,
         }
         f.write(json.dumps(info, indent=2))
 
@@ -70,13 +80,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", default="input_data/humaneval/seed/deepseekcoder/seed.jsonl")
     ap.add_argument("--max-examples", type=int, default=None)
+    ap.add_argument("--shard", default=None, help="i/N: run every N-th problem starting at i (0-based)")
+    ap.add_argument("--out", default=None, help="output folder (default output_data/<seeds>/<timestamp>)")
     args = ap.parse_args()
     input_seeds = args.seeds
+    if args.shard:
+        index, count = (int(x) for x in args.shard.split("/"))
+        if not 0 <= index < count:
+            ap.error("--shard i/N needs 0 <= i < N")
+        config.SHARD = (index, count)
 
     # Setup logging and output directory
-    output_folder = setup_logging_and_output(input_seeds)
+    output_folder = setup_logging_and_output(input_seeds, args.out)
     config.CALL_LOG = f"{output_folder}/llm_calls.jsonl"
-    config.HYPOTHESIS_LOG = f"{output_folder}/hypothesis_nodes.jsonl"  # [hdmg] variant C only
+    config.HYPOTHESIS_LOG = f"{output_folder}/hypothesis_nodes.jsonl"  # [hdmg] variants B and C
 
     logger.info("Starting MGDebugger pipeline")
     logger.info(f"Input seeds: {input_seeds}")
@@ -90,3 +107,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # [hdmg] results are written; don't wait for test threads that timed out and are still running
+    sys.stdout.flush(); sys.stderr.flush()
+    os._exit(0)

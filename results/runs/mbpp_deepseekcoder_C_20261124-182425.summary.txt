@@ -1,0 +1,21 @@
+(cleaned seeds: 60 undetectable or unusable bugs excluded)
+Run: MGDebugger/src/output_data/experiments/mbpp_deepseekcoder_C_20261124-182425
+Variant: C  k=3  sandbox timeout=5.0 s
+Model: claude-haiku-5-5  stop_on=both  T=None  min_p=False  outer=2
+Dataset: mbpp  seeds from: deepseekcoder  problems: 500  buggy: 104  debugged so far: 104
+
+                               fixed    RSR %    acc %  tokens/problem
+hidden-selection (paper)          91     87.5     85.4            5094
+public-selection                  89     85.6     85.0            4706
+paper                                    39.0     80.0
+
+LLM calls: 305 ok, 0 failed;  per problem: 2.9
+  fix            calls    134   tokens     181715   per problem    1.3 calls,     1747 tok
+  localize       calls    171   tokens     348017   per problem    1.6 calls,     3346 tok
+Localize loop: 120 attempts  {'fixed': 109, 'fix_failed': 8, 'no_divergence': 1, 'fixed_fallback': 2}
+  rounds 165  {'diverged': 131, 'no_divergence': 31, 'fallback': 3}
+  breakpoints placed 178 (1.1 per round);  attempts that returned a fix: 111
+Spend: $0.173 total, $0.0017 per problem
+Attempts passing public but failing hidden tests (overfit): 20
+Hidden-selection fixes whose winning attempt made no debug call: 0 of 91
+First attempt that passed hidden tests: {1: 88, 2: 3, None: 13}

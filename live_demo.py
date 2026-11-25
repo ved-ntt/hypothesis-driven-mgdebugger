@@ -251,7 +251,7 @@ def part1():
 
 # ---- part 2: the merge into MGDebugger --------------------------------------------------------------
 def part2():
-    step("2. The merge: the same loop inside MGDebugger's recursion (variant C)")
+    step("2. The merge: the same loop inside MGDebugger's recursion (variant B)")
     sys.path.insert(0, os.path.join(ROOT, "MGDebugger", "src"))
     from loguru import logger
     logger.remove()                                     # MGDebugger logs a lot; keep the screen clean
@@ -264,12 +264,12 @@ def part2():
     print("    make_palindrome\n    ├── find_longest_suffix\n    │   └── is_palindrome\n    └── build_result")
     print(DIM("(decomposition and derived tests are fixed to the proposal's example here; normally two LLM steps)"))
     print("\nIt then walks the tree bottom-up. A function whose test fails goes to the debug step;"
-          "\nin variant C that step is the hypothesis loop instead of an imagined trace.")
+          "\nin variant B that step is the hypothesis loop instead of an imagined trace.")
     pause()
 
     llm = DemoLLM("part2")
     log = tempfile.NamedTemporaryFile("w+", suffix=".jsonl", delete=False).name
-    config.VARIANT, config.HYPOTHESIS_LOG, config.HYPOTHESIS_K = "C", log, 3
+    config.VARIANT, config.HYPOTHESIS_LOG, config.HYPOTHESIS_K = "B", log, 3
     mg_debugger.convert_to_hierarchical = lambda code, include_example=False: TREE
     mg_debugger.generate_test_cases = lambda full_code, gold, name: [dict(t) for t in DERIVED[name]]
     mg_debugger.get_completion_with_retry = llm          # the debug step's LLM calls

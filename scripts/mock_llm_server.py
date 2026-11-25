@@ -5,7 +5,8 @@
 
 Decompose: echoes the code back (one function). Derive tests: returns the gold tests.
 Debug: noop returns the function unchanged; oracle returns the canonical solution.
-Variant C: hypotheses predict a value the first argument keeps (usually confirmed); fixes as above.
+Variant B: hypotheses predict a value the first argument keeps (usually confirmed); fixes as above.
+Variant C: a breakpoint on the entry function's first statement that always diverges; fixes as above.
 It only checks plumbing (calls, logging, scoring); its results mean nothing.
 """
 import argparse, ast, json, re
@@ -46,10 +47,21 @@ def answer(prompt):
         if args.mode == "oracle" and name in CANON:
             code = CANON[name]
         return "Trace: ...\n```python\n" + code + "\n```"
+    if "## Program (numbered lines)" in prompt or prompt.startswith("Your breakpoint reply was invalid"):
+        return "```json\n" + json.dumps(mock_breakpoints(prompt)) + "\n```"
+    if "## Breakpoint evidence" in prompt:
+        # Variant C fix prompt: noop returns the function unchanged, oracle the canonical one
+        name = re.search(r"Rewrite ONLY (\w+)", prompt).group(1)
+        program = between(prompt, "## Program", "## Failing test")
+        code = CANON.get(name) if args.mode == "oracle" else None
+        if code is None:
+            node = next((n for n in ast.parse(program).body if getattr(n, "name", None) == name), None)
+            code = ast.get_source_segment(program, node) if node else "pass"
+        return "```python\n" + code + "\n```"
     if "## Failing test" in prompt or prompt.startswith("Your reply was invalid"):
         return "```json\n" + json.dumps(mock_hypothesis(prompt)) + "\n```"
     if "## Confirmed hypothesis" in prompt:
-        # Variant C fix prompt: noop returns the target unchanged (the fix fails), oracle the canonical one
+        # Variant B fix prompt: noop returns the target unchanged (the fix fails), oracle the canonical one
         name = re.search(r"Rewrite ONLY (\w+)", prompt).group(1)
         code = CANON.get(name) if args.mode == "oracle" else None
         return "```python\n" + (code or between(prompt, "## Program", "## Confirmed hypothesis")) + "\n```"
@@ -57,7 +69,7 @@ def answer(prompt):
 
 
 def mock_hypothesis(prompt):
-    """Variant C hypothesis prompt. Predicts that the first keyword argument of the failing call keeps
+    """Variant B hypothesis prompt. Predicts that the first keyword argument of the failing call keeps
     its input value, which a real run confirms unless the target reassigns it, so a mock run goes
     through trace, verdict and the fix step. Falls back to a prediction that is always rejected."""
     hyp = {"hypothesis": "mock", "observe": ["__return__"], "expect": {"__return__": []}, "why": "mock"}
@@ -70,6 +82,26 @@ def mock_hypothesis(prompt):
     except (SyntaxError, ValueError, TypeError, AttributeError, IndexError):
         pass
     return hyp
+
+
+def mock_breakpoints(prompt):
+    """Variant C localize prompt (and its retry, which repeats nothing, so reuse the first prompt's
+    listing if present). Breaks on the first statement of the last function with an expectation no
+    real value matches, so every mock round diverges and goes on to the fix step."""
+    listing = between(prompt, "## Program (numbered lines)", "## Failing test")
+    program = "\n".join(re.sub(r"^\s*\d+ \|", "", l)[1:] if re.match(r"^\s*\d+ \| ", l)
+                         else re.sub(r"^\s*\d+ \|", "", l) for l in listing.splitlines())
+    rounds = between(prompt, "## Earlier rounds", "\x00")
+    used = set(int(x) for x in re.findall(r"line (\d+) `", rounds))
+    line = 1
+    try:
+        funcs = [n for n in ast.parse(program).body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        stmts = [st.lineno for st in ast.walk(funcs[-1]) if isinstance(st, ast.stmt) and st is not funcs[-1]
+                 and not (isinstance(st, ast.Expr) and isinstance(getattr(st, "value", None), ast.Constant))]
+        line = next((l for l in sorted(set(stmts)) if l not in used), stmts[0])
+    except (SyntaxError, IndexError):
+        pass
+    return {"breakpoints": [{"line": line, "expr": "len(str(1))", "expect": [99]}], "why": "mock"}
 
 
 class Handler(BaseHTTPRequestHandler):

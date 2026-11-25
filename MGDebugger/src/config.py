@@ -45,17 +45,53 @@ CALL_LOG = None
 # [hdmg] Context for the call log: which problem / outer attempt is running
 CURRENT_TASK_ID = None
 CURRENT_ATTEMPT = None
-# [hdmg] Debug step at a failing node. "A": MGDebugger as published (LLM-simulated trace).
-# "C": the hypothesis loop (hdmg/mg_adapter.py). Everything else in the pipeline is identical.
+# [hdmg] Variants (only the debug step differs; the outer loop and scoring are the same):
+#   "A": MGDebugger as published (decompose, derive tests, LLM-simulated trace)
+#   "B": hypothesis loop at each failing node of MGDebugger's tree (hdmg/mg_adapter.py)
+#   "C": breakpoint localization, no decomposition and no derived tests; replaces mg_debug in
+#        debug_pipeline (hdmg/localize.py, observe=True)
+# Runs made before the letters were final have no VARIANT_SCHEME in params.json and use development
+# names; scripts/compare_runs.py maps them.
 VARIANT = os.environ.get("HDMG_VARIANT", "A").strip().upper()
-if VARIANT not in ("A", "C"):
-    raise ValueError(f"HDMG_VARIANT must be A or C, got {VARIANT!r}")
-# [hdmg] Variant C: hypotheses per debug attempt, seconds per sandbox run. Pure C: no fallback to
-# debug_function, so every C fix comes from a confirmed hypothesis.
+if VARIANT not in ("A", "B", "C"):
+    raise ValueError(f"HDMG_VARIANT must be A, B or C, got {VARIANT!r}")
+VARIANT_SCHEME = 2
+# [hdmg] B: hypotheses per debug attempt; C: breakpoint rounds per attempt. Seconds per sandbox run.
+# Pure B: no fallback to debug_function, so every B fix comes from a confirmed hypothesis.
 HYPOTHESIS_K = int(os.environ.get("HDMG_K", "3"))
 SANDBOX_TIMEOUT = float(os.environ.get("HDMG_SANDBOX_TIMEOUT", "5"))
-# [hdmg] Variant C per-node JSONL log; set by main.py to <output_folder>/hypothesis_nodes.jsonl
+# [hdmg] B per-node / C per-attempt JSONL log; set by main.py to <output_folder>/hypothesis_nodes.jsonl
 HYPOTHESIS_LOG = None
+# [hdmg] Test harness. "fixed" (default) for every variant: compare test results by value (tuple vs
+# list, float tolerance) instead of repr strings; take the gold tests from the cleaned seeds'
+# public_tests (scripts/clean_data.py), which reads the round(...) and "is None" asserts upstream
+# drops; test the top-level function on those gold tests instead of LLM-re-derived ones.
+# "published" keeps MGDebugger's method exactly. (In both modes a test that times out is logged
+# as a failure; upstream crashed there with a NameError.)
+HARNESS = os.environ.get("HDMG_HARNESS", "fixed").strip().lower()
+if HARNESS not in ("fixed", "published"):
+    raise ValueError(f"HDMG_HARNESS must be fixed or published, got {HARNESS!r}")
+# [hdmg] Skip problems whose buggy code passes every given test ("detectable": false in the cleaned
+# seeds): no debugger that sees only the given tests can find those bugs.
+ONLY_DETECTABLE = os.environ.get("HDMG_ONLY_DETECTABLE", "1") == "1"
+# [hdmg] Exact given tests (fixed harness): the value comparison treats (1, 2) and [1, 2] as equal, but
+# the benchmark's own asserts use Python's ==. With HDMG_EXACT_TESTS=1 a given test passes only if its
+# assert passes, and C prompts show the expected value as the assert writes it. Off by default so
+# earlier runs stay reproducible; matters on MBPP, whose functions often return tuples.
+EXACT_TESTS = os.environ.get("HDMG_EXACT_TESTS", "0") == "1"
+CURRENT_PUBLIC_TESTS = None
+# [hdmg] Retry backoff for failed LLM calls (rate limits when shards run in parallel), seconds
+RETRY_BACKOFF = float(os.environ.get("HDMG_RETRY_BACKOFF", "2"))
+# [hdmg] Run one shard of the problems: (index, count), set by main.py --shard i/N
+SHARD = None
+# [hdmg] Entry point of the problem being debugged; mg_debug tests it on the gold tests
+CURRENT_ENTRY_POINT = None
+
+# [hdmg] The repo root, so MGDebugger can import hdmg (shared comparison, hypothesis loop)
+import sys as _sys
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _ROOT not in _sys.path:
+    _sys.path.append(_ROOT)
 
 # Global statistics tracking
 TOTAL_PROMPT_TOKENS = 0

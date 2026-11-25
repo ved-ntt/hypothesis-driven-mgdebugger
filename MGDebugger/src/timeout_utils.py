@@ -49,7 +49,9 @@ class PropagatingThread(Thread):
         return self.ret
 
     def terminate(self):
-        self._stop()
+        stop = getattr(self, "_stop", None)  # [hdmg] gone in Python 3.13; it never stopped the thread anyway
+        if stop is not None:
+            stop()
 
 
 def function_with_timeout(func, args, timeout, max_memory=100 * 1024 * 1024):
@@ -59,7 +61,9 @@ def function_with_timeout(func, args, timeout, max_memory=100 * 1024 * 1024):
         # set_memory_limit(max_memory)()
         result_container.append(func(*args))
 
-    thread = PropagatingThread(target=wrapper)
+    # [hdmg] daemon: a thread that timed out keeps running (Python can't stop it); a non-daemon one
+    # also keeps the whole process from exiting when the run is over
+    thread = PropagatingThread(target=wrapper, daemon=True)
     thread.start()
     thread.join(timeout)
     if thread.is_alive():

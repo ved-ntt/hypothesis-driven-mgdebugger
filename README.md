@@ -1,6 +1,6 @@
 # Hypothesis-Driven MGDebugger
 
-CSC 591 project, NC State University, Fall 2026. Paper: [`paper/paper.pdf`](paper/paper.pdf) (2 pages).
+CSC 591 project, NC State University, Fall 2026. Paper: [`paper/paper.pdf`](paper/paper.pdf) (4 pages; source `paper/paper.md`).
 
 LLM debuggers usually *imagine* what code does. MGDebugger (Shi et al., ICSE 2026) splits a buggy program into a
 tree of subfunctions, writes tests for each one, and asks the model to simulate execution step by step to find
@@ -277,4 +277,4 @@ hidden-selection (the MGDebugger paper's rule).
 
 ## Team
 
-[author names]. Built on MGDebugger by Shi et al. (https://github.com/YerbaPage/MGDebugger, MIT license).
+Vedantt Koul, Rishabh Ravi Kumar, Arjun Mamidala. Built on MGDebugger by Shi et al. (https://github.com/YerbaPage/MGDebugger, MIT license).

@@ -1,6 +1,6 @@
 (cleaned seeds: 13 undetectable bugs excluded)
-Run: output_data/experiments/humanevalfix_C_20261123-160202
-Variant: C  k=3  sandbox timeout=5.0 s
+Run: MGDebugger/src/output_data/experiments/humanevalfix_B_20261123-160202
+Variant: B  k=3  sandbox timeout=5.0 s
 Model: claude-haiku-5-5  stop_on=both  T=None  min_p=False  outer=2
 Dataset: humanevalfix  seeds from: claude-haiku-5-5  problems: 164  buggy: 151  debugged so far: 12
   (partial run: RSR below is over the 12 problems attempted)

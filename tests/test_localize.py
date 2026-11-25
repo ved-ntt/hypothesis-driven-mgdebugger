@@ -1,4 +1,4 @@
-"""Variant L tests, offline: breakpoint tracing in the sandbox and the localize -> fix loop with a
+"""Variant C tests (rules on and off), offline: breakpoint tracing in the sandbox and the localize -> fix loop with a
 scripted LLM."""
 import json
 
@@ -251,7 +251,7 @@ def test_run_script_verdicts_and_runaway_program_is_killed():
     assert not ok and ("MemoryError" in reason or "timeout" in reason)
 
 
-# ----- D (observe=True; L2 during development): observe-only breakpoints, fix after a full match
+# ----- C's rules (observe=True): observe-only breakpoints, fix after a full match, partial progress
 
 MAD = ("def mad(numbers):\n"
        "    mean = sum(numbers) / len(numbers)\n"
@@ -283,11 +283,11 @@ def test_copied_code_may_call_program_functions_but_not_mutate():
     assert "change the program's state" in errs(4, "xs.append(y)")[0]
 
 
-def test_l_misses_a_return_bug_that_l2_observes():
+def test_without_rules_a_return_bug_is_missed_with_r1_it_is_found():
     own_formula = {"breakpoints": [{"line": 3, "expr": "sum(abs(x - mean) for x in numbers) / len(numbers)",
                                     "expect": [1.0]}]}
     r = lz.localize_and_fix(MAD, "mad", MAD_TESTS, ScriptedLLM([J(own_formula)]), k=1)
-    assert r.status == "no_divergence"                      # L: the model's formula is right, so it matches
+    assert r.status == "no_divergence"                      # rules off: the model's formula is right, so it matches
 
     copied = {"breakpoints": [{"line": 3, "expr": "sum(abs(x - mean) for x in numbers) / mean", "expect": [1.0]}]}
     llm = ScriptedLLM([J(own_formula), J(copied), MAD_FIX])
@@ -306,7 +306,7 @@ def test_fallback_fix_after_full_match():
     assert "len(numbers)\n" in out
 
 
-def test_no_fallback_in_plain_l():
+def test_no_fallback_without_rules():
     match = {"breakpoints": [{"line": 3, "expr": "mean", "expect": [2.5]}]}
     r = lz.localize_and_fix(MAD, "mad", MAD_TESTS, ScriptedLLM([J(match)]), k=1)
     assert r.status == "no_divergence" and len(r.rounds) == 1
@@ -319,7 +319,7 @@ FIX_A = '```python\ndef f(x, mode):\n    if mode == "a":\n        return x + 1\n
 FIX_AB = '```python\ndef f(x, mode):\n    if mode == "a":\n        return x + 1\n    return x * 2\n```'
 
 
-def test_l2_keeps_partial_progress_on_two_bugs():
+def test_partial_progress_on_two_bugs():
     llm = ScriptedLLM([J({"breakpoints": [{"line": 3, "expr": "x + 2", "expect": [2]}]}), FIX_A,
                        J({"breakpoints": [{"line": 4, "expr": "x * 3", "expect": [2]}]}), FIX_AB])
     r = lz.localize_and_fix(TWO_BUGS, "f", TWO_TESTS, llm, k=1, observe=True)
@@ -328,7 +328,7 @@ def test_l2_keeps_partial_progress_on_two_bugs():
     assert "mode='b'" in llm.prompt(2) and "updated program" in llm.prompt(2)
 
 
-def test_l2_returns_partial_program_and_plain_l_discards_it():
+def test_partial_program_returned_and_discarded_without_rules():
     script = [J({"breakpoints": [{"line": 3, "expr": "x + 2", "expect": [2]}]}), FIX_A,
               J({"breakpoints": [{"line": 4, "expr": "x", "expect": [1]}]}), FIX_A]   # matched; fallback fails
     r = lz.localize_and_fix(TWO_BUGS, "f", TWO_TESTS, ScriptedLLM(list(script)), k=1, observe=True)
@@ -358,7 +358,7 @@ def test_prompts_show_the_expected_value_as_the_assert_writes_it():
     assert lz.shown_expected({"expected_output": [1]}) == [1]
     loc = {"breakpoints": [{"line": 3, "expr": "res", "expect": [[[1, 2]]]}]}
     llm = ScriptedLLM([J(loc), "```python\ndef pairs(xs):\n    return tuple(tuple(p) for p in xs)\n```"])
-    # the value matches, so D finds no divergence and falls back to a fix with the matched evidence
+    # the value matches, so C finds no divergence and falls back to a fix with the matched evidence
     r = lz.localize_and_fix(TUP, "pairs", [TUP_TEST], llm, k=1, observe=True)
     assert r.status == "fixed_fallback"
     assert "expected ((1, 2),)" in llm.prompt(0) and "tuple vs list" in llm.prompt(0)

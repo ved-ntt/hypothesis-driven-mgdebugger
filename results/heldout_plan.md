@@ -1,15 +1,15 @@
-# Held-out check of variant D (written before any held-out run)
+# Held-out check of variant C (written before any held-out run)
 
-(Variant D was called L2 when this plan was written; only the name was changed since.)
+(Variant letters were made final after this plan was written; only the names were changed since.)
 
 ## Why
 
-D was designed after looking at L's failures on HumanEvalFix, and then scored on HumanEvalFix. Its
+C's rules were developed while working on HumanEvalFix, and C was then scored on HumanEvalFix. Its
 result there (149 and 150 of 151, against MGDebugger's 143 of 148, at a tenth of the cost) could be a
-fit to that benchmark. This check runs the frozen D and MGDebugger (A) on bug sets that played no part
-in designing D.
+fit to that benchmark. This check runs the frozen C and MGDebugger (A) on bug sets that played no part
+in designing C.
 
-## What D is (frozen at commit 2b57d71)
+## What C is (frozen at commit 2b57d71)
 
 Three rules, none of which mentions a benchmark, a bug type or a code pattern:
 
@@ -23,17 +23,17 @@ Three rules, none of which mentions a benchmark, a bug type or a code pattern:
    program for the next round, localized again on the next failing test. Programs with several bugs can
    then be repaired one bug at a time.
 
-Changes since the HumanEvalFix D runs, made before any held-out run: the prompt no longer says that
+Changes since the HumanEvalFix C runs, made before any held-out run: the prompt no longer says that
 "the bug is often in the last line" (a frequency observed on HumanEvalFix) and its examples no longer
 resemble a HumanEvalFix problem; it states the general fact instead (a breakpoint shows the state before
-its line, so a line's own computation is checked by copying its expressions); rule 3 was added. D is
+its line, so a line's own computation is checked by copying its expressions); rule 3 was added. C is
 therefore run again on HumanEvalFix as well.
 
 ## Held-out sets
 
 Bugs written by code models, not planted by hand: wrong algorithms, several errors in one program,
 missing cases. Different from HumanEvalFix's single-token planted bugs. Only the data format of these
-sets was looked at (to parse their given tests), not D's behaviour on them.
+sets was looked at (to parse their given tests), not C's behaviour on them.
 
 | Set | Usable bugs | What differs from HumanEvalFix |
 | --- | --- | --- |
@@ -55,8 +55,8 @@ The runs were made with `scripts/run_heldout.sh` at commit 2b57d71; `scripts/rep
 - Repairs under public-selection on the problems both variants completed, the paired split and the exact
   McNemar p-value; hidden-selection as a second view.
 - Cost per problem and per repair, tokens, LLM calls.
-- D's loop statistics (divergence found on the first round, fixes after a full match, partial progress).
+- C's loop statistics (divergence found on the first round, fixes after a full match, partial progress).
 
-D counts as a general improvement over A if, on the held-out sets pooled, it repairs at least as many bugs
+C counts as a general improvement over A if, on the held-out sets pooled, it repairs at least as many bugs
 as A within chance (no significant loss) at a fraction of A's cost. A significant loss on any set is
 reported as a limitation, with the cases that explain it.

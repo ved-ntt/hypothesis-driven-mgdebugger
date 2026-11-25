@@ -1,13 +1,13 @@
-# A vs C: humanevalfix.jsonl
+# A vs B: humanevalfix.jsonl
 
-- Model: claude-haiku-5-5 (A), claude-haiku-5-5 (C)
-- Problems compared: 12 (attempted by both runs; A attempted 12, C attempted 12)
-- Outer attempts: 2 (A), 2 (C); harness fixed / fixed; hypotheses per debug call k = 3
-- Runs: `output_data/experiments/humanevalfix_A_20261123-155801`, `output_data/experiments/humanevalfix_C_20261123-160202`
+- Model: claude-haiku-5-5 (A), claude-haiku-5-5 (B)
+- Problems compared: 12 (attempted by both runs; A attempted 12, B attempted 12)
+- Outer attempts: 2 (A), 2 (B); harness fixed / fixed; hypotheses per debug call k = 3
+- Runs: `MGDebugger/src/output_data/experiments/humanevalfix_A_20261123-155801`, `MGDebugger/src/output_data/experiments/humanevalfix_B_20261123-160202`
 
 ## Repairs
 
-| Metric | A (MGDebugger) | C (hypothesis loop) |
+| Metric | A (MGDebugger) | B (hypothesis loop) |
 | --- | --- | --- |
 | Repaired, public-selection | 11 (91.7%) | 12 (100.0%) |
 | Repaired, hidden-selection (paper) | 12 (100.0%) | 12 (100.0%) |
@@ -19,18 +19,18 @@
 
 ## Paired outcome (public-selection)
 
-| Both repaired | Only A | Only C | Neither |
+| Both repaired | Only A | Only B | Neither |
 | --- | --- | --- | --- |
 | 11 | 0 | 1 | 0 |
 
 Exact McNemar test on the 1 discordant problems: p = 1.000 (not significant at the 0.05 level: the difference could be chance).
 
 - Only A: none
-- Only C: HumanEval/3
+- Only B: HumanEval/3
 
 ## By bug type (public-selection)
 
-| Bug type | Problems | A | C |
+| Bug type | Problems | A | B |
 | --- | --- | --- | --- |
 | excess logic | 1 | 1 (100.0%) | 1 (100.0%) |
 | missing logic | 3 | 3 (100.0%) | 3 (100.0%) |
@@ -40,20 +40,20 @@ Exact McNemar test on the 1 discordant problems: p = 1.000 (not significant at t
 
 ## Where the debug step mattered
 
-The decomposition step rewrites the code; when that rewrite already passes every test, the debug step never runs, in A or C. Those repairs do not distinguish the variants.
+The decomposition step rewrites the code; when that rewrite already passes every test, the debug step never runs, in A or B. Those repairs do not distinguish the variants.
 
-| | A | C |
+| | A | B |
 | --- | --- | --- |
 | Repairs where the debug step never ran (decomposition alone) | 7 | 8 |
 | Repairs where the debug step ran | 4 | 4 |
 | **Problems where both runs' first decomposition left a failing function** | 1 | 1 |
 | Repaired among those | 1 (100.0%) | 1 (100.0%) |
 
-On those 1 problems: only A repaired 0, only C repaired 0; exact McNemar p = 1.000.
+On those 1 problems: only A repaired 0, only B repaired 0; exact McNemar p = 1.000.
 - Only A: none
-- Only C: none
+- Only B: none
 
-## What C's hypothesis loop did
+## What B's hypothesis loop did
 
 | Measure | Value |
 | --- | --- |

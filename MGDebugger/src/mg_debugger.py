@@ -15,7 +15,7 @@ from llm_client import get_completion_with_retry  # [hdmg]
 
 
 def _hypothesis_debugger():
-    """[hdmg] Variant C's debug step, from hdmg/mg_adapter.py at the repo root."""
+    """[hdmg] Variant B's debug step, from hdmg/mg_adapter.py at the repo root."""
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     if root not in sys.path:
         sys.path.append(root)
@@ -79,8 +79,8 @@ def mg_debug(full_code, gold_test_cases, max_debug_attempts=MAX_DEBUG_RETRIES):
                 break
 
             logger.info(f"Debugging function: {func_name} (Attempt {debug_attempt + 1}/{max_debug_attempts})")
-            if config.VARIANT == "C":
-                # [hdmg] variant C: hypothesis loop instead of the LLM-simulated trace. It needs the
+            if config.VARIANT == "B":
+                # [hdmg] variant B: hypothesis loop instead of the LLM-simulated trace. It needs the
                 # whole program to run the target, and returns the same (analysis, fix) pair.
                 analysis, new_fixed_code = _hypothesis_debugger()(
                     fixed_code, func_name, test_cases, hierarchical_code,

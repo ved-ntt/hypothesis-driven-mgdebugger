@@ -3,7 +3,7 @@
 Two entry points:
   run_call(code, call_expr)                         -> what the call returned / printed / raised
   run_traced(code, call_expr, func_name, variables) -> the same, plus a VariableTracer record
-  run_breakpoints(code, call_expr, breakpoints)     -> the same, plus every breakpoint hit (variant L)
+  run_breakpoints(code, call_expr, breakpoints)     -> the same, plus every breakpoint hit (variant C)
 
 A timeout or exception is an observation, not an error: it comes back in "status".
 Upstream MGDebugger runs code with exec() in a thread of the debugger's own process;

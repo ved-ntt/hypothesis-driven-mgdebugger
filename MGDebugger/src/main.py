@@ -61,6 +61,7 @@ def setup_logging_and_output(input_seeds: str, output_folder: str = None):
             "TEMPERATURE_EFFECTIVE": config.TEMPERATURE,
             "LLM_BASE_URL": config.LLM_BASE_URL,
             "VARIANT": config.VARIANT,
+            "VARIANT_SCHEME": config.VARIANT_SCHEME,
             "HYPOTHESIS_K": config.HYPOTHESIS_K,
             "SANDBOX_TIMEOUT": config.SANDBOX_TIMEOUT,
             "HARNESS": config.HARNESS,
@@ -92,7 +93,7 @@ def main():
     # Setup logging and output directory
     output_folder = setup_logging_and_output(input_seeds, args.out)
     config.CALL_LOG = f"{output_folder}/llm_calls.jsonl"
-    config.HYPOTHESIS_LOG = f"{output_folder}/hypothesis_nodes.jsonl"  # [hdmg] variants C and L
+    config.HYPOTHESIS_LOG = f"{output_folder}/hypothesis_nodes.jsonl"  # [hdmg] variants B and C
 
     logger.info("Starting MGDebugger pipeline")
     logger.info(f"Input seeds: {input_seeds}")

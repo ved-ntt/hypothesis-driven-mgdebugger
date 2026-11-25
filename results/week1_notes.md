@@ -67,7 +67,7 @@ report RSR both over all buggy seeds and over the public-detectable subset.
 
 1. Run variant A on HumanEval (38 problems) with a real model; check hidden-selection RSR against
    76.3% (DeepSeek-Coder-V2-Lite). Then HumanEvalFix (164).
-2. Week 2: hypothesis loop (variant C) on top of `hdmg/sandbox.run_traced`.
+2. Week 2: hypothesis loop (variant B) on top of `hdmg/sandbox.run_traced`.
 
 ## Pilot: variant A, Claude Haiku 5.5, 5 HumanEval problems, 2 attempts (2026-11-03)
 
@@ -97,4 +97,4 @@ Run: `MGDebugger/src/output_data/humaneval/seed/deepseekcoder/20261103-153022`
 - Upshot: of the 3 unfixed pilot problems, none was a failure of the debugging step itself. All three are
   test-handling problems (oracle error, parser, comparison). Proposed: fix parsing and comparison (value
   equality, tuple/list normalised, float tolerance) for every variant, and report A both as published and
-  with the fixed harness, so the A vs C comparison isn't driven by harness bugs.
+  with the fixed harness, so the A vs B comparison isn't driven by harness bugs.

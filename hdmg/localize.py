@@ -1,8 +1,8 @@
-"""Variant D (and its first version, L): localize the bug with breakpoints, then fix only there.
+"""Variant C: localize the bug with breakpoints, then fix only there.
 
 MGDebugger (variant A) finds the buggy function by decomposing the program into a tree of
 subfunctions and asking the LLM to write tests for each one. On HumanEvalFix that machinery is
-about 80% of the token cost (decompose ~13%, derive tests ~67%). Variant L skips both:
+about 80% of the token cost (decompose ~13%, derive tests ~67%). The breakpoint loop skips both:
 
   1. Run the public tests on the program as it is. All pass -> nothing to do.
   2. Show the LLM the numbered program and the first failing test. It places 1-3 breakpoints:
@@ -15,8 +15,8 @@ about 80% of the token cost (decompose ~13%, derive tests ~67%). Variant L skips
   5. No divergence (every breakpoint matched) also goes into memory, so the next round looks
      elsewhere. Up to k rounds.
 
-Variant D (observe=True; called L2 during development) adds three rules. The first two target L's main
-miss on HumanEvalFix: a bug inside a
+Variant C (observe=True) adds three rules to that loop. Without them (observe=False, used only in
+tests), the loop's main miss is a bug inside a
 `return` expression, where every value computed before the line is correct and the model, free to
 write any expression, wrote the correct formula and saw it match.
   - Observe, don't recompute: a breakpoint expression must be a value the program holds (a variable,
@@ -26,14 +26,14 @@ write any expression, wrote the correct formula and saw it match.
   - Partial progress is kept: a fix that makes more public tests pass without breaking any that
     passed becomes the program for the next round, localized again on the first test still failing
     (one extra round per accepted step, at most 2k rounds). A program with several bugs can then be
-    repaired one bug at a time; L throws such a fix away because the other bug still fails a test.
+    repaired one bug at a time; without this rule such a fix is thrown away because the other bug still fails a test.
 
 The localization is real execution, not the LLM's simulation: the LLM predicts what SHOULD
-happen and the sandbox says what DID happen, the same contract as variant C's hypotheses, but on
+happen and the sandbox says what DID happen, the same contract as variant B's hypotheses, but on
 the whole program at once instead of node by node.
 
 Nothing here imports MGDebugger. MGDebugger/src/debug_pipeline.py calls debug_program when
-HDMG_VARIANT=D (or L) and passes in its LLM call.
+HDMG_VARIANT=C and passes in its LLM call.
 """
 from __future__ import annotations
 
@@ -698,7 +698,7 @@ def debug_program(buggy_code: str, entry_point: str, gold_tests: list, *,
                   complete: Optional[Callable[[list], str]] = None, llm: Optional[LLM] = None,
                   k: int = DEFAULT_K, timeout: float = DEFAULT_TIMEOUT, log_path: Optional[str] = None,
                   log_context: Optional[dict] = None, observe: bool = False) -> str:
-    """Variant L's replacement for mg_debug(buggy_code, gold_tests): returns the fixed program, or
+    """Variant C's replacement for mg_debug(buggy_code, gold_tests): returns the fixed program, or
     the program unchanged when no fix passed every public test. Logs one JSON line per call.
 
     Exceptions inside are logged and treated as no fix; BaseExceptions (llm_client.BudgetExceeded)

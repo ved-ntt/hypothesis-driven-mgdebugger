@@ -1,4 +1,4 @@
-"""Compare two runs (any variants: A, C, L) on the same problems.
+"""Compare two runs (any variants: A, B, C) on the same problems.
 
   python3 scripts/compare_runs.py <run_1> <run_2> [--out results/<name>.md]
 
@@ -10,8 +10,8 @@ runs are paired. Reports, for each variant:
   - the paired split (both / only one / neither) and an exact McNemar test on it
   - cost: dollars, tokens and LLM calls per problem, dollars per repair, and cost by pipeline stage
   - repairs by bug type (HumanEvalFix)
-  - when both runs decompose (A, C): repairs the debug step produced vs decomposition alone
-  - for C: what the hypothesis loop did; for L: what the breakpoint loop did
+  - when both runs decompose (A, B): repairs the debug step produced vs decomposition alone
+  - for B: what the hypothesis loop did; for C: what the breakpoint loop did
 """
 import argparse
 import collections
@@ -67,25 +67,30 @@ def per_problem_cost(run: dict, task_ids) -> dict:
 
 def debug_invocations(run: dict) -> collections.Counter:
     """(task_id, attempt) -> times the debug step ran: A's debug_function calls, C's loop calls."""
-    if run["params"].get("VARIANT", "A") == "C":
+    if variant(run) == "B":
         return collections.Counter((nd.get("task_id"), nd.get("attempt")) for nd in run["nodes"])
     return collections.Counter((c["task_id"], c["attempt"]) for c in run["calls"]
                                if c.get("ok") and c.get("stage") == "debug")
 
 
-DESCRIPTION = {"A": "MGDebugger", "C": "hypothesis loop", "L": "breakpoints, first version",
-               "D": "breakpoint localization"}
+DESCRIPTION = {"A": "MGDebugger", "B": "hypothesis loop", "C": "breakpoint localization"}
+
+
+LEGACY = {"C": "B", "L" + "2": "C", "D": "C"}   # development names -> final letters
 
 
 def variant(run: dict) -> str:
     v = run["params"].get("VARIANT", "A")
-    return "D" if v == "L2" else v   # D was called L2 during development
+    if run["params"].get("VARIANT_SCHEME") != 2:
+        # runs made before the letters were final used development names
+        v = LEGACY.get(v, v)
+    return v
 
 
 def debug_step_section(runs: dict, shared: list, key: str) -> list:
     """Separate repairs the debug step produced from repairs the decomposition rewrite produced.
 
-    Only for two decomposing variants (A, C). MGDebugger's first step rewrites the buggy code into
+    Only for two decomposing variants (A, B). MGDebugger's first step rewrites the buggy code into
     subfunctions. If that rewrite already passes every test, no function fails and the debug step
     never runs; such repairs say nothing about the debug steps. The fair comparison is on problems
     where the first decomposition left a failing function in BOTH runs.
@@ -196,7 +201,7 @@ def l_loop_section(label: str, nodes: list) -> list:
             if len(rounds) > verdicts["invalid"] else "| Breakpoints per valid round | n/a |",
             f"| Fixes that passed the public tests, of fixes tried after a divergence | {fix_success} of {len(diverged)} |",
             f"| Fixes tried in the entry function (vs a helper) | {in_entry} of {len(diverged)} |",
-            f"| Fallback fixes after a full match (D) that passed | {fallback_ok} of {len(fallback)} |",
+            f"| Fallback fixes after a full match (R2) that passed | {fallback_ok} of {len(fallback)} |",
             f"| Attempts that returned a fix | {fixes} ({100 * fixes / len(nodes):.0f}%) |" if nodes else
             "| Attempts that returned a fix | n/a |",
             f"| Rounds per returned fix (mean) | {sum(fixed_rounds) / len(fixed_rounds):.2f} |" if fixed_rounds else
@@ -220,7 +225,7 @@ def main():
         raise SystemExit("the two runs have no problem in common")
     seeds_name = os.path.basename(R1["params"]["input_seeds"])
     k_note = "; ".join(f"k = {R['params'].get('HYPOTHESIS_K')} ({v})" for v, R in runs.items()
-                       if variant(R) in ("C", "L", "D"))
+                       if variant(R) in ("B", "C"))
     out = [f"# {x} vs {y}: {seeds_name}", "",
            f"- {x} = {DESCRIPTION.get(v1, v1)}, {y} = {DESCRIPTION.get(v2, v2)}",
            f"- Model: {R1['params'].get('MODEL')} ({x}), {R2['params'].get('MODEL')} ({y})",
@@ -281,14 +286,14 @@ def main():
         out.append("")
 
     out += stage_cost_section(runs, set(shared), n)
-    if v1 in ("A", "C") and v2 in ("A", "C"):
+    if v1 in ("A", "B") and v2 in ("A", "B"):
         out += debug_step_section(runs, shared, key)
 
     for v, R in runs.items():
         nodes = [nd for nd in R["nodes"] if nd.get("task_id") in set(shared)]
-        if variant(R) == "C" and nodes:
+        if variant(R) == "B" and nodes:
             out += c_loop_section(v, nodes)
-        elif variant(R) in ("L", "D") and nodes:
+        elif variant(R) == "C" and nodes:
             out += l_loop_section(v, nodes)
 
     text = "\n".join(out) + "\n"

@@ -1,6 +1,6 @@
 {
-  "input_seeds": "/mnt/c/Users/Vedantt/Downloads/NCSU/sem3/Testing/hypothesis-driven-mgdebugger/data/clean/humanevalfix.jsonl",
-  "output_folder": "output_data/experiments/humanevalfix_A_20261123-155801",
+  "input_seeds": "data/clean/humanevalfix.jsonl",
+  "output_folder": "MGDebugger/src/output_data/experiments/humanevalfix_A_20261123-155801",
   "MAX_DEBUG_RETRIES": 3,
   "MAX_PARSE_RETRIES": 3,
   "RETRY_DELAY": 0,
@@ -22,5 +22,6 @@
   "SANDBOX_TIMEOUT": 5.0,
   "HARNESS": "fixed",
   "ONLY_DETECTABLE": true,
-  "SHARD": 4
+  "SHARD": 4,
+  "VARIANT_SCHEME": 2
 }
